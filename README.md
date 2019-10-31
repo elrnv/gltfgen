@@ -24,20 +24,12 @@ Alternatively, you may produce the same result by specifying the number of frame
 
 `> gltfgen [OPTIONS] <output> <pattern>`
 
-## Flags
-
-  - `-h, --help`       Prints help information
-  - `-V, --version`    Prints version information
-
-## Options
-
-  - `-f, --fps <fps>`                Frames per second. 1.0/fps gives the time step between discrete frames.
-  - `-t, --time-step <time-step>`    Time step in seconds between discrete frames. If 'fps' is also provided, this parameter is ignored. [default: 1.0]
-
-## Arguments
   - `<output>`     Output glTF file
 
-  - `<pattern>`    A glob pattern matching files to be included in the generated glTF document. Use `#` to match a frame number. If more than one '#' is used, the first match will correspond to the frame number. Note that the glob pattern should generally be provided as a quoted string to prevent the terminal from evaluating it.
+  - `<pattern>`    A glob pattern matching files to be included in the generated glTF document. Use `#` to match a frame number. Use '{' and '}' to select parts of the pattern to be used to name meshes in the output glTF.
+
+Run `gltfgen -h` to get more details.
+
 
 # Features
 
