@@ -41,7 +41,11 @@ struct Opt {
 
     /// Reverse polygon orientations in the output glTF meshes.
     #[structopt(short, long)]
-    reverse: bool
+    reverse: bool,
+
+    /// Reverse tetrahedra orientations on the input meshes.
+    #[structopt(short = "R", long)]
+    reverse_tets: bool
 }
 
 #[derive(Debug)]
@@ -104,15 +108,17 @@ fn main() -> Result<(), Error> {
                     regex.as_str(),
                     &path_str
                 ));
-                let frame_cap = caps.name("frame").unwrap();
-                let frame = frame_cap
+                let frame_cap = caps.name("frame");
+                let frame = frame_cap.map(|frame_match|
+                    frame_match
                     .as_str()
                     .parse::<usize>()
-                    .expect("ERROR: Failed to parse frame number");
+                    .expect("ERROR: Failed to parse frame number"))
+                    .unwrap_or(0);
 
                 // Find a unique name for this mesh in the filename.
                 let mut name = String::new();
-                for cap in caps.iter().skip(1).filter(|&cap| cap != Some(frame_cap)) {
+                for cap in caps.iter().skip(1).filter(|&cap| cap != frame_cap) {
                     if let Some(cap) = cap {
                         name.push_str(cap.as_str());
                     }
@@ -123,9 +129,17 @@ fn main() -> Result<(), Error> {
                 } else if let Ok(polymesh) = geo::io::load_polymesh::<f32, _>(&path) {
                     TriMesh::<f32>::from(polymesh)
                 } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f64, _>(&path) {
-                    trimesh_f64_to_f32(tetmesh.surface_trimesh())
+                    let mut trimesh = tetmesh.surface_trimesh();
+                    if opt.reverse_tets {
+                        trimesh.reverse();
+                    }
+                    trimesh_f64_to_f32(trimesh)
                 } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f32, _>(path) {
-                    tetmesh.surface_trimesh()
+                    let mut trimesh = tetmesh.surface_trimesh();
+                    if opt.reverse_tets {
+                        trimesh.reverse();
+                    }
+                    trimesh
                 } else {
                     continue;
                 };
