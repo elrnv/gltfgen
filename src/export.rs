@@ -34,19 +34,37 @@ fn to_padded_byte_vector<T>(vec: Vec<T>) -> Vec<u8> {
     new_vec
 }
 
+#[derive(Debug)]
+struct Node {
+    pub name: String,
+    pub first_frame: usize,
+    pub mesh: TriMesh,
+    pub morphs: Vec<(usize, Vec<[f32; 3]>)>,
+}
+
 /// Split a sequence of keyframed trimeshes by changes in topology.
-fn into_morphs(
-    meshes: Vec<(usize, TriMesh)>,
-) -> Vec<(usize, TriMesh, Vec<(usize, Vec<[f32; 3]>)>)> {
+fn into_nodes(meshes: Vec<(String, usize, TriMesh)>) -> Vec<Node> {
     let mut out = Vec::new();
     let mut mesh_iter = meshes.into_iter();
 
-    if let Some((first_frame, mesh)) = mesh_iter.next() {
-        out.push((first_frame, mesh, Vec::new()));
+    if let Some((name, first_frame, mesh)) = mesh_iter.next() {
+        out.push(Node {
+            name,
+            first_frame,
+            mesh,
+            morphs: Vec::new(),
+        });
 
-        while let Some((frame, next_mesh)) = mesh_iter.next() {
-            let (_, ref mesh, ref mut morph_targets) = *out.last_mut().unwrap();
-            if mesh.num_vertices() == next_mesh.num_vertices() && next_mesh.indices == mesh.indices
+        while let Some((next_name, frame, next_mesh)) = mesh_iter.next() {
+            let Node {
+                ref name,
+                ref mesh,
+                ref mut morphs,
+                ..
+            } = *out.last_mut().unwrap();
+            if mesh.num_vertices() == next_mesh.num_vertices()
+                && next_mesh.indices == mesh.indices
+                && name == &next_name
             {
                 // Same topology, convert positions to displacements.
                 let displacements: Vec<_> = next_mesh
@@ -54,22 +72,30 @@ fn into_morphs(
                     .zip(mesh.vertex_position_iter())
                     .map(|(a, b)| [a[0] - b[0], a[1] - b[1], a[2] - b[2]])
                     .collect();
-                morph_targets.push((frame, displacements));
+                morphs.push((frame, displacements));
             } else {
                 // Different topology, instantiate a new mesh.
-                out.push((frame, next_mesh, Vec::new()));
+                out.push(Node {
+                    name: next_name,
+                    first_frame: frame,
+                    mesh: next_mesh,
+                    morphs: Vec::new(),
+                });
             }
         }
     }
     out
 }
 
-pub(crate) fn export(mut meshes: Vec<(usize, TriMesh)>, output: PathBuf, time_step: f32) {
-    meshes.sort_by(|a, b| a.0.cmp(&b.0));
+pub(crate) fn export(mut meshes: Vec<(String, usize, TriMesh)>, output: PathBuf, time_step: f32) {
+    meshes.sort_by(|(name_a, frame_a, _), (name_b, frame_b, _)| {
+        // First sort by name
+        name_a.cmp(name_b).then(frame_a.cmp(&frame_b))
+    });
 
     // Convert sequence of meshes into meshes with morph targets by erasing repeating topology
     // data.
-    let morphed_meshes = into_morphs(meshes);
+    let morphed_meshes = into_nodes(meshes);
 
     let mut accessors = Vec::new();
     let mut buffer_views = Vec::new();
@@ -78,7 +104,13 @@ pub(crate) fn export(mut meshes: Vec<(usize, TriMesh)>, output: PathBuf, time_st
     let mut animations = Vec::new();
     let mut data = Vec::<u8>::new();
 
-    for (first_frame, mesh, morphs) in morphed_meshes.into_iter() {
+    for Node {
+        name,
+        first_frame,
+        mesh,
+        morphs,
+    } in morphed_meshes.into_iter()
+    {
         let bbox = mesh.bounding_box();
 
         let TriMesh {
@@ -415,7 +447,7 @@ pub(crate) fn export(mut meshes: Vec<(usize, TriMesh)>, output: PathBuf, time_st
             extras: Default::default(),
             matrix: None,
             mesh: Some(json::Index::new(meshes.len() as u32)),
-            name: None,
+            name: Some(name),
             rotation: None,
             scale: None,
             translation: None,
@@ -440,9 +472,11 @@ pub(crate) fn export(mut meshes: Vec<(usize, TriMesh)>, output: PathBuf, time_st
         uri: None,
     };
 
+    let num_nodes = nodes.len();
+
     let root = json::Root {
         asset: json::Asset {
-            generator: Some(String::from("gltfgen v0.1")),
+            generator: Some(format!("gltfgen v{}", structopt::clap::crate_version!())),
             ..Default::default()
         },
         animations,
@@ -455,7 +489,7 @@ pub(crate) fn export(mut meshes: Vec<(usize, TriMesh)>, output: PathBuf, time_st
             extensions: Default::default(),
             extras: Default::default(),
             name: None,
-            nodes: vec![json::Index::new(0)],
+            nodes: (0..num_nodes).map(|i| json::Index::new(i as u32)).collect(),
         }],
         ..Default::default()
     };

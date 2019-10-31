@@ -37,7 +37,7 @@ Alternatively, you may produce the same result by specifying the number of frame
 ## Arguments
   - `<output>`     Output glTF file
 
-  - `<pattern>`    A glob pattern matching files to be included in the generated glTF document. Use `#` to match a frame number. If more than one '#' is used, the first match will correspond to the frame number. Note that the glob pattern should generally by provided as a quoted string to prevent the terminal from evaluating it.
+  - `<pattern>`    A glob pattern matching files to be included in the generated glTF document. Use `#` to match a frame number. If more than one '#' is used, the first match will correspond to the frame number. Note that the glob pattern should generally be provided as a quoted string to prevent the terminal from evaluating it.
 
 # Features
 

@@ -1,8 +1,9 @@
 mod export;
+mod utils;
 
-use regex::Regex;
+use utils::*;
 
-use glob::glob;
+use std::fmt;
 use std::path::PathBuf;
 use structopt::StructOpt;
 
@@ -16,8 +17,16 @@ struct Opt {
     output: PathBuf,
 
     /// A glob pattern matching files to be included in the generated glTF document.
-    /// Use `#` to match a frame number. If more than one '#' is used, the first match will
-    /// correspond to the frame number.
+    ///
+    /// Use # to match a frame number. If more than one '#' is used, the first match will
+    /// correspond to the frame number. Note that the glob pattern should generally by provided
+    /// as a quoted string to prevent the terminal from evaluating it.
+    ///
+    /// Strings within between braces (i.e. '{' and '}') will be used as names for unique
+    /// animations.
+    /// This means that a single output can contain multiple animations. If more than one group is
+    /// specified, the matched strings within will be concatenated to produce a unique name.
+    /// Note that for the time being, '{' '}' are ignored when the glob pattern is matched.
     #[structopt(parse(from_str))]
     pattern: String,
 
@@ -29,165 +38,103 @@ struct Opt {
     /// ignored.
     #[structopt(short, long, default_value = "1.0")]
     time_step: f32,
+
+    /// Reverse polygon orientations in the output glTF meshes.
+    #[structopt(short, long)]
+    reverse: bool
 }
 
-fn glob_to_regex(glob: &str) -> Regex {
-    let mut regex = String::from("^");
+#[derive(Debug)]
+enum Error {
+    GlobError(glob::GlobError),
+    GlobPatternError(glob::PatternError),
+}
 
-    // If we are doing extended matching, this boolean is true when we are inside
-    // a group (eg {*.html,*.js}), and false otherwise.
-    let mut in_group = false;
-
-    let mut prev_c = None;
-    let mut glob_iter = glob.chars().peekable();
-    while let Some(c) = glob_iter.next() {
-        match c {
-            '#' => {
-                // Special character indicating a frame number digit
-                regex.push_str("([0-9]*)");
-            }
-            // Escape special characters
-            '/' | '$' | '^' | '+' | '.' | '(' | ')' | '=' | '!' | '|' => {
-                //regex.push_str("\\");
-                regex.push(c);
-            }
-
-            '?' => {
-                regex.push('.');
-            }
-
-            '[' | ']' => {
-                regex.push(c);
-            }
-
-            '{' => {
-                in_group = true;
-                regex.push('(');
-            }
-
-            '}' => {
-                in_group = false;
-                regex.push(')');
-            }
-
-            ',' => {
-                if in_group {
-                    regex.push('|');
-                } else {
-                    regex.push_str("\\");
-                    regex.push(c);
-                }
-            }
-
-            '*' => {
-                // Check if there are multiple consecutive ** in the pattern.
-                let mut count = 1;
-                while glob_iter.peek() == Some(&'*') {
-                    count += 1;
-                    glob_iter.next();
-                }
-                let next_c = glob_iter.peek();
-
-                if count > 1
-                    && (next_c == Some(&'/') || next_c.is_none())
-                    && (prev_c == Some('/') || prev_c.is_none())
-                {
-                    // Multiple * detected
-                    // match zero or more path segments
-                    regex.push_str("?:[^/]*?:/|$*");
-                    glob_iter.next(); // consume '/' if any.
-                } else {
-                    // Single * detected
-                    regex.push_str("[^/]*"); // match one path segment
-                }
-            }
-
-            _ => regex.push(c),
-        }
-        prev_c = Some(c);
+impl From<glob::GlobError> for Error {
+    fn from(glob_err: glob::GlobError) -> Error {
+        Error::GlobError(glob_err)
     }
-
-    regex.push('$');
-
-    Regex::new(&regex).unwrap()
 }
 
-fn main() {
+impl From<glob::PatternError> for Error {
+    fn from(src: glob::PatternError) -> Error {
+        Error::GlobPatternError(src)
+    }
+}
+
+impl fmt::Display for Error {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Error::GlobError(e) => e.fmt(f),
+            Error::GlobPatternError(e) => e.fmt(f),
+        }
+    }
+}
+
+fn main() -> Result<(), Error> {
     let opt = Opt::from_args();
-    let regex = glob_to_regex(&opt.pattern);
-    let pattern = opt
-        .pattern
-        .replace("*#*", "*")
-        .replace("*#", "*")
-        .replace("#*", "*")
-        .replace("#", "*");
+    let pattern = if opt.pattern.starts_with("./") {
+        &opt.pattern[2..]
+    } else {
+        &opt.pattern[..]
+    };
+
+    let regex = glob_to_regex(&pattern);
+    let pattern = remove_braces(
+        &pattern
+            .replace("*#*", "*")
+            .replace("*#", "*")
+            .replace("#*", "*")
+            .replace("#", "*"),
+    );
     let mut meshes = Vec::new();
-    for entry in glob(&pattern).expect("ERROR: Failed to read input glob pattern") {
+    let glob_options = glob::MatchOptions {
+        case_sensitive: true,
+        require_literal_separator: true,
+        require_literal_leading_dot: false,
+    };
+
+    for entry in glob::glob_with(&pattern, glob_options)?
+    {
         match entry {
             Ok(path) => {
-                let caps = regex.captures(path.to_str().unwrap()).unwrap();
-                let frame = caps[1]
+                let path_str = path.to_string_lossy();
+                let caps = regex.captures(&path_str).expect(&format!(
+                    "ERROR: Regex '{}' did not match path '{}'",
+                    regex.as_str(),
+                    &path_str
+                ));
+                let frame_cap = caps.name("frame").unwrap();
+                let frame = frame_cap
+                    .as_str()
                     .parse::<usize>()
                     .expect("ERROR: Failed to parse frame number");
-                if let Ok(polymesh) = geo::io::load_polymesh::<f64, _>(&path) {
-                    let TriMesh {
-                        vertex_positions,
-                        indices,
-                        face_indices,
-                        face_offsets,
-                        vertex_attributes,
-                        face_attributes,
-                        face_vertex_attributes,
-                        face_edge_attributes,
-                    } = TriMesh::from(polymesh);
-                    let meshf32 = TriMesh {
-                        vertex_positions: geo::mesh::attrib::IntrinsicAttribute::from_vec(
-                            vertex_positions
-                                .iter()
-                                .map(|&x| [x[0] as f32, x[1] as f32, x[2] as f32])
-                                .collect(),
-                        ),
-                        indices,
-                        face_indices,
-                        face_offsets,
-                        vertex_attributes,
-                        face_attributes,
-                        face_vertex_attributes,
-                        face_edge_attributes,
-                    };
-                    meshes.push((frame, meshf32));
-                } else if let Ok(polymesh) = geo::io::load_polymesh::<f32, _>(&path) {
-                    meshes.push((frame, TriMesh::<f32>::from(polymesh)));
-                } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f64, _>(&path) {
-                    let TriMesh {
-                        vertex_positions,
-                        indices,
-                        face_indices,
-                        face_offsets,
-                        vertex_attributes,
-                        face_attributes,
-                        face_vertex_attributes,
-                        face_edge_attributes,
-                    } = tetmesh.surface_trimesh();
-                    let meshf32 = TriMesh {
-                        vertex_positions: geo::mesh::attrib::IntrinsicAttribute::from_vec(
-                            vertex_positions
-                                .iter()
-                                .map(|&x| [x[0] as f32, x[1] as f32, x[2] as f32])
-                                .collect(),
-                        ),
-                        indices,
-                        face_indices,
-                        face_offsets,
-                        vertex_attributes,
-                        face_attributes,
-                        face_vertex_attributes,
-                        face_edge_attributes,
-                    };
-                    meshes.push((frame, meshf32));
-                } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f32, _>(path) {
-                    meshes.push((frame, tetmesh.surface_trimesh()));
+
+                // Find a unique name for this mesh in the filename.
+                let mut name = String::new();
+                for cap in caps.iter().skip(1).filter(|&cap| cap != Some(frame_cap)) {
+                    if let Some(cap) = cap {
+                        name.push_str(cap.as_str());
+                    }
                 }
+
+                let mut mesh = if let Ok(polymesh) = geo::io::load_polymesh::<f64, _>(&path) {
+                    trimesh_f64_to_f32(TriMesh::from(polymesh))
+                } else if let Ok(polymesh) = geo::io::load_polymesh::<f32, _>(&path) {
+                    TriMesh::<f32>::from(polymesh)
+                } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f64, _>(&path) {
+                    trimesh_f64_to_f32(tetmesh.surface_trimesh())
+                } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f32, _>(path) {
+                    tetmesh.surface_trimesh()
+                } else {
+                    continue;
+                };
+
+                if opt.reverse {
+                    mesh.reverse();
+                }
+
+                meshes.push((name, frame, mesh));
             }
             Err(e) => {
                 eprintln!("{}", e);
@@ -200,4 +147,5 @@ fn main() {
         opt.time_step
     };
     export::export(meshes, opt.output, dt);
+    Ok(())
 }
