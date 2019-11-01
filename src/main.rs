@@ -6,8 +6,11 @@ use utils::*;
 use std::fmt;
 use std::path::PathBuf;
 use structopt::StructOpt;
+use std::sync::{RwLock, Arc};
 
 use geo::mesh::TriMesh;
+
+use rayon::prelude::*;
 
 #[derive(StructOpt, Debug)]
 #[structopt(name = "gltfgen")]
@@ -43,9 +46,13 @@ struct Opt {
     #[structopt(short, long)]
     reverse: bool,
 
-    /// Reverse tetrahedra orientations on the input meshes.
-    #[structopt(short = "R", long)]
-    reverse_tets: bool
+    /// Invert tetrahedra orientations on the input meshes.
+    #[structopt(short, long)]
+    invert_tets: bool,
+
+    /// Silence all output.
+    #[structopt(short, long)]
+    quiet: bool,
 }
 
 #[derive(Debug)]
@@ -91,75 +98,89 @@ fn main() -> Result<(), Error> {
             .replace("#*", "*")
             .replace("#", "*"),
     );
-    let mut meshes = Vec::new();
     let glob_options = glob::MatchOptions {
         case_sensitive: true,
         require_literal_separator: true,
         require_literal_leading_dot: false,
     };
 
-    for entry in glob::glob_with(&pattern, glob_options)?
-    {
-        match entry {
-            Ok(path) => {
-                let path_str = path.to_string_lossy();
-                let caps = regex.captures(&path_str).expect(&format!(
-                    "ERROR: Regex '{}' did not match path '{}'",
-                    regex.as_str(),
-                    &path_str
-                ));
-                let frame_cap = caps.name("frame");
-                let frame = frame_cap.map(|frame_match|
-                    frame_match
-                    .as_str()
-                    .parse::<usize>()
-                    .expect("ERROR: Failed to parse frame number"))
-                    .unwrap_or(0);
+    let entries: Vec<_> = glob::glob_with(&pattern, glob_options)?.collect();
+    let pb = Arc::new(RwLock::new(pbr::ProgressBar::new(entries.len() as u64)));
+    if !opt.quiet {
+        pb.write().unwrap().message("Building Meshes ")
+    }
 
-                // Find a unique name for this mesh in the filename.
-                let mut name = String::new();
-                for cap in caps.iter().skip(1).filter(|&cap| cap != frame_cap) {
-                    if let Some(cap) = cap {
-                        name.push_str(cap.as_str());
-                    }
-                }
-
-                let mut mesh = if let Ok(polymesh) = geo::io::load_polymesh::<f64, _>(&path) {
-                    trimesh_f64_to_f32(TriMesh::from(polymesh))
-                } else if let Ok(polymesh) = geo::io::load_polymesh::<f32, _>(&path) {
-                    TriMesh::<f32>::from(polymesh)
-                } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f64, _>(&path) {
-                    let mut trimesh = tetmesh.surface_trimesh();
-                    if opt.reverse_tets {
-                        trimesh.reverse();
-                    }
-                    trimesh_f64_to_f32(trimesh)
-                } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f32, _>(path) {
-                    let mut trimesh = tetmesh.surface_trimesh();
-                    if opt.reverse_tets {
-                        trimesh.reverse();
-                    }
-                    trimesh
-                } else {
-                    continue;
-                };
-
-                if opt.reverse {
-                    mesh.reverse();
-                }
-
-                meshes.push((name, frame, mesh));
-            }
-            Err(e) => {
-                eprintln!("{}", e);
-            }
+    let meshes: Vec<_> = entries.into_par_iter().filter_map(|entry| {
+        if !opt.quiet {
+            pb.write().unwrap().inc();
         }
+        entry.ok().and_then(|path| {
+            let path_str = path.to_string_lossy();
+            let caps = regex.captures(&path_str).expect(&format!(
+                "ERROR: Regex '{}' did not match path '{}'",
+                regex.as_str(),
+                &path_str
+            ));
+            let frame_cap = caps.name("frame");
+            let frame = frame_cap
+                .map(|frame_match| {
+                    frame_match
+                        .as_str()
+                        .parse::<usize>()
+                        .expect("ERROR: Failed to parse frame number")
+                })
+                .unwrap_or(0);
+
+            // Find a unique name for this mesh in the filename.
+            let mut name = String::new();
+            for cap in caps.iter().skip(1).filter(|&cap| cap != frame_cap) {
+                if let Some(cap) = cap {
+                    name.push_str(cap.as_str());
+                }
+            }
+
+            let mut mesh = if let Ok(polymesh) = geo::io::load_polymesh::<f64, _>(&path) {
+                trimesh_f64_to_f32(TriMesh::from(polymesh))
+            } else if let Ok(polymesh) = geo::io::load_polymesh::<f32, _>(&path) {
+                TriMesh::<f32>::from(polymesh)
+            } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f64, _>(&path) {
+                let mut trimesh = tetmesh.surface_trimesh();
+                if opt.invert_tets {
+                    trimesh.reverse();
+                }
+                trimesh_f64_to_f32(trimesh)
+            } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f32, _>(path) {
+                let mut trimesh = tetmesh.surface_trimesh();
+                if opt.invert_tets {
+                    trimesh.reverse();
+                }
+                trimesh
+            } else {
+                return None;
+            };
+
+            if opt.reverse {
+                mesh.reverse();
+            }
+
+            Some((name, frame, mesh))
+        })
+    }).collect();
+    if !opt.quiet {
+        pb.write().unwrap().finish();
     }
     let dt = if let Some(fps) = opt.fps {
         1.0 / fps as f32
     } else {
         opt.time_step
     };
-    export::export(meshes, opt.output, dt);
+
+    if !opt.quiet {
+        println!("Exporting glTF...");
+    }
+    export::export(meshes, opt.output, dt, opt.quiet);
+    if !opt.quiet {
+        println!("Success!");
+    }
     Ok(())
 }

@@ -6,6 +6,7 @@ use geo::mesh::topology::NumVertices;
 use geo::mesh::vertex_positions::VertexPositions;
 use geo::ops::*;
 use json::validation::Checked::Valid;
+use pbr::ProgressBar;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
@@ -43,7 +44,13 @@ struct Node {
 }
 
 /// Split a sequence of keyframed trimeshes by changes in topology.
-fn into_nodes(meshes: Vec<(String, usize, TriMesh)>) -> Vec<Node> {
+fn into_nodes(meshes: Vec<(String, usize, TriMesh)>, quiet: bool) -> Vec<Node> {
+    let mut pb = ProgressBar::new(meshes.len() as u64);
+
+    if !quiet {
+        pb.message("Extracting Animation ");
+    }
+
     let mut out = Vec::new();
     let mut mesh_iter = meshes.into_iter();
 
@@ -56,6 +63,10 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh)>) -> Vec<Node> {
         });
 
         while let Some((next_name, frame, next_mesh)) = mesh_iter.next() {
+            if !quiet {
+                pb.inc();
+            }
+
             let Node {
                 ref name,
                 ref mesh,
@@ -84,10 +95,18 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh)>) -> Vec<Node> {
             }
         }
     }
+    if !quiet {
+        pb.finish();
+    }
     out
 }
 
-pub(crate) fn export(mut meshes: Vec<(String, usize, TriMesh)>, output: PathBuf, time_step: f32) {
+pub(crate) fn export(
+    mut meshes: Vec<(String, usize, TriMesh)>,
+    output: PathBuf,
+    time_step: f32,
+    quiet: bool,
+) {
     meshes.sort_by(|(name_a, frame_a, _), (name_b, frame_b, _)| {
         // First sort by name
         name_a.cmp(name_b).then(frame_a.cmp(&frame_b))
@@ -95,7 +114,13 @@ pub(crate) fn export(mut meshes: Vec<(String, usize, TriMesh)>, output: PathBuf,
 
     // Convert sequence of meshes into meshes with morph targets by erasing repeating topology
     // data.
-    let morphed_meshes = into_nodes(meshes);
+    let morphed_meshes = into_nodes(meshes, quiet);
+
+    let count: u64 = morphed_meshes.iter().map(|m| m.morphs.len() as u64).sum();
+    let mut pb = ProgressBar::new(count);
+    if !quiet {
+        pb.message("Constructing glTF    ");
+    }
 
     let mut accessors = Vec::new();
     let mut buffer_views = Vec::new();
@@ -347,6 +372,9 @@ pub(crate) fn export(mut meshes: Vec<(String, usize, TriMesh)>, output: PathBuf,
         // Add morph targets
         let mut targets = Vec::new();
         for (_, displacements) in morphs.into_iter() {
+            if !quiet {
+                pb.inc();
+            }
             let byte_length = displacements.len() * mem::size_of::<[f32; 3]>();
             let disp_view = json::buffer::View {
                 buffer: json::Index::new(0),
@@ -462,6 +490,11 @@ pub(crate) fn export(mut meshes: Vec<(String, usize, TriMesh)>, output: PathBuf,
             primitives,
             weights: None,
         });
+    }
+
+    if !quiet {
+        pb.finish();
+        println!("Writing glTF to File...");
     }
 
     let buffer = json::Buffer {

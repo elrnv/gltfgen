@@ -5,8 +5,6 @@ pub fn trimesh_f64_to_f32(mesh: TriMesh<f64>) -> TriMesh<f32> {
     let TriMesh {
         vertex_positions,
         indices,
-        face_indices,
-        face_offsets,
         vertex_attributes,
         face_attributes,
         face_vertex_attributes,
@@ -20,8 +18,6 @@ pub fn trimesh_f64_to_f32(mesh: TriMesh<f64>) -> TriMesh<f32> {
                 .collect(),
         ),
         indices,
-        face_indices,
-        face_offsets,
         vertex_attributes,
         face_attributes,
         face_vertex_attributes,
