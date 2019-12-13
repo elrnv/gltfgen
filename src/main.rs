@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 use std::sync::{RwLock, Arc};
 
-use geo::mesh::TriMesh;
+use gut::mesh::TriMesh;
 
 use rayon::prelude::*;
 
@@ -139,17 +139,17 @@ fn main() -> Result<(), Error> {
                 }
             }
 
-            let mut mesh = if let Ok(polymesh) = geo::io::load_polymesh::<f64, _>(&path) {
+            let mut mesh = if let Ok(polymesh) = gut::io::load_polymesh::<f64, _>(&path) {
                 trimesh_f64_to_f32(TriMesh::from(polymesh))
-            } else if let Ok(polymesh) = geo::io::load_polymesh::<f32, _>(&path) {
+            } else if let Ok(polymesh) = gut::io::load_polymesh::<f32, _>(&path) {
                 TriMesh::<f32>::from(polymesh)
-            } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f64, _>(&path) {
+            } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f64, _>(&path) {
                 let mut trimesh = tetmesh.surface_trimesh();
                 if opt.invert_tets {
                     trimesh.reverse();
                 }
                 trimesh_f64_to_f32(trimesh)
-            } else if let Ok(tetmesh) = geo::io::load_tetmesh::<f32, _>(path) {
+            } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f32, _>(path) {
                 let mut trimesh = tetmesh.surface_trimesh();
                 if opt.invert_tets {
                     trimesh.reverse();

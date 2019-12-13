@@ -1,18 +1,46 @@
-use gltf_json as json;
+use gltf::json;
 use std::mem;
 
 use byteorder::{LittleEndian, WriteBytesExt};
-use geo::mesh::topology::NumVertices;
-use geo::mesh::vertex_positions::VertexPositions;
-use geo::ops::*;
+use gut::mesh::topology::NumVertices;
+use gut::mesh::vertex_positions::VertexPositions;
+use gut::ops::*;
 use json::validation::Checked::Valid;
 use pbr::ProgressBar;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
-type TriMesh = geo::mesh::TriMesh<f32>;
+type TriMesh = gut::mesh::TriMesh<f32>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone)]
+enum Output {
+    Standard { binary_path: PathBuf, gltf_path: PathBuf },
+    Binary { glb_path: PathBuf },
+}
+
+impl Output {
+    /// Determine output type based on the output filename. If the filename extension is .bin or
+    /// .gltf, then we produce glTF in the `Standard` form. If the extension is .glb, we produce
+    /// the `Binary` form.
+    ///
+    /// If no extension is given, then `Binary` is assumed.
+    fn from_ext(mut output: PathBuf) -> Self {
+        let ext = output.extension();
+        if ext.is_none() || ext.unwrap() == "glb" {
+            output.set_extension("glb"); // In case it's not set.
+            Output::Binary { glb_path: output }
+        } else {
+            let mut buffer_path = output.clone();
+            buffer_path.set_extension("bin");
+            Output::Standard {
+                binary_path: buffer_path,
+                gltf_path: output,
+            }
+        }
+    }
+}
+
+#[derive(Copy, Clone)]
 #[repr(C)]
 struct Vertex {
     position: [f32; 3],
@@ -35,7 +63,6 @@ fn to_padded_byte_vector<T>(vec: Vec<T>) -> Vec<u8> {
     new_vec
 }
 
-#[derive(Debug)]
 struct Node {
     pub name: String,
     pub first_frame: usize,
@@ -165,7 +192,7 @@ pub(crate) fn export(
             }
         }
         let idx_acc = json::Accessor {
-            buffer_view: json::Index::new(buffer_views.len() as u32),
+            buffer_view: Some(json::Index::new(buffer_views.len() as u32)),
             byte_offset: 0,
             count: num_indices as u32,
             component_type: Valid(json::accessor::GenericComponentType(
@@ -206,7 +233,7 @@ pub(crate) fn export(
         }
 
         let pos_acc = json::Accessor {
-            buffer_view: json::Index::new(pos_view_index as u32),
+            buffer_view: Some(json::Index::new(pos_view_index as u32)),
             byte_offset: 0,
             count: vertex_positions.len() as u32,
             component_type: Valid(json::accessor::GenericComponentType(
@@ -215,8 +242,8 @@ pub(crate) fn export(
             extensions: Default::default(),
             extras: Default::default(),
             type_: Valid(json::accessor::Type::Vec3),
-            min: Some(json::Value::from(&bbox.min_corner().into_inner()[..])),
-            max: Some(json::Value::from(&bbox.max_corner().into_inner()[..])),
+            min: Some(json::Value::from(&bbox.min_corner()[..])),
+            max: Some(json::Value::from(&bbox.max_corner()[..])),
             name: None,
             normalized: false,
             sparse: None,
@@ -250,29 +277,34 @@ pub(crate) fn export(
         buffer_views.push(weight_indices_view);
 
         // Initialized weights
-        let byte_length = num_animation_frames * morphs.len() * mem::size_of::<f32>();
-        let initial_weights_view = json::buffer::View {
-            buffer: json::Index::new(0),
-            byte_length: byte_length as u32,
-            byte_offset: Some(data.len() as u32),
-            byte_stride: None, //Some(mem::size_of::<f32>() as u32),
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            target: None,
+        let initial_weights_view_index = if cfg!(feature = "empty-sparse-base-buffer-view") {
+            None
+        } else {
+            let byte_length = num_animation_frames * morphs.len() * mem::size_of::<f32>();
+            let initial_weights_view = json::buffer::View {
+                buffer: json::Index::new(0),
+                byte_length: byte_length as u32,
+                byte_offset: Some(data.len() as u32),
+                byte_stride: None,
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+                target: None,
+            };
+            for _ in 0..(num_animation_frames * morphs.len()) {
+                data.write_f32::<LittleEndian>(0.0).unwrap();
+            }
+            let initial_weights_view_index = Some(json::Index::new(buffer_views.len() as u32));
+            buffer_views.push(initial_weights_view);
+            initial_weights_view_index
         };
-        for _ in 0..(num_animation_frames * morphs.len()) {
-            data.write_f32::<LittleEndian>(0.0).unwrap();
-        }
-        let initial_weights_view_index = buffer_views.len();
-        buffer_views.push(initial_weights_view);
 
         // Output animation frames as weights
         let weight_view = json::buffer::View {
             buffer: json::Index::new(0),
             byte_length: (morphs.len() * mem::size_of::<f32>()) as u32,
             byte_offset: Some(data.len() as u32),
-            byte_stride: None, //Some(mem::size_of::<f32>() as u32),
+            byte_stride: None,
             extensions: Default::default(),
             extras: Default::default(),
             name: None,
@@ -287,7 +319,7 @@ pub(crate) fn export(
 
         // Weights accessor for all frames
         let weights_acc = json::Accessor {
-            buffer_view: json::Index::new(initial_weights_view_index as u32),
+            buffer_view: initial_weights_view_index,
             byte_offset: 0,
             count: (num_animation_frames * morphs.len()) as u32,
             component_type: Valid(json::accessor::GenericComponentType(
@@ -351,7 +383,7 @@ pub(crate) fn export(
         buffer_views.push(time_view);
 
         let time_acc = json::Accessor {
-            buffer_view: json::Index::new(time_view_index as u32),
+            buffer_view: Some(json::Index::new(time_view_index as u32)),
             byte_offset: 0,
             count: num_animation_frames as u32,
             component_type: Valid(json::accessor::GenericComponentType(
@@ -389,7 +421,7 @@ pub(crate) fn export(
             let disp_view_index = buffer_views.len();
             buffer_views.push(disp_view);
 
-            let mut bbox = geo::bbox::BBox::empty();
+            let mut bbox = gut::bbox::BBox::empty();
             for disp in displacements.iter() {
                 bbox.absorb(*disp);
                 for &coord in disp.iter() {
@@ -398,7 +430,7 @@ pub(crate) fn export(
             }
 
             let disp_acc = json::Accessor {
-                buffer_view: json::Index::new(disp_view_index as u32),
+                buffer_view: Some(json::Index::new(disp_view_index as u32)),
                 byte_offset: 0,
                 count: displacements.len() as u32,
                 component_type: Valid(json::accessor::GenericComponentType(
@@ -407,8 +439,8 @@ pub(crate) fn export(
                 extensions: Default::default(),
                 extras: Default::default(),
                 type_: Valid(json::accessor::Type::Vec3),
-                min: Some(json::Value::from(&bbox.min_corner().into_inner()[..])),
-                max: Some(json::Value::from(&bbox.max_corner().into_inner()[..])),
+                min: Some(json::Value::from(&bbox.min_corner()[..])),
+                max: Some(json::Value::from(&bbox.max_corner()[..])),
                 name: None,
                 normalized: false,
                 sparse: None,
@@ -497,12 +529,17 @@ pub(crate) fn export(
         println!("Writing glTF to File...");
     }
 
+    let output = Output::from_ext(output);
+
     let buffer = json::Buffer {
         byte_length: data.len() as u32,
         extensions: Default::default(),
         extras: Default::default(),
         name: None,
-        uri: None,
+        uri: match &output {
+            Output::Binary { .. } => None,
+            Output::Standard { binary_path, .. } => Some(binary_path.to_str().expect("ERROR: Path is not valid UTF-8").to_string()),
+        }
     };
 
     let num_nodes = nodes.len();
@@ -527,21 +564,39 @@ pub(crate) fn export(
         ..Default::default()
     };
 
-    // Serialize gltf json
-    let json_string =
-        json::serialize::to_string(&root).expect("ERROR: Failed to serialize glTF json.");
-    let json_offset = align_to_multiple_of_four(json_string.len() as u32);
+    match output {
+        Output::Binary { glb_path } => {
+            // Output in binary format.
+            let json_string =
+                json::serialize::to_string(&root).expect("ERROR: Failed to serialize glTF json");
+            let json_offset = align_to_multiple_of_four(json_string.len() as u32);
 
-    let glb = gltf::binary::Glb {
-        header: gltf::binary::Header {
-            magic: b"glTF".clone(),
-            version: 2,
-            length: json_offset + align_to_multiple_of_four(data.len() as u32),
-        },
-        bin: Some(Cow::Owned(to_padded_byte_vector(data))),
-        json: Cow::Owned(json_string.into_bytes()),
-    };
-    let writer = std::fs::File::create(output).expect("ERROR: Failed to create output file.");
-    glb.to_writer(writer)
-        .expect("ERROR: Failed to output glTF binary data.");
+            let glb = gltf::binary::Glb {
+                header: gltf::binary::Header {
+                    magic: b"glTF".clone(),
+                    version: 2,
+                    length: json_offset + align_to_multiple_of_four(data.len() as u32),
+                },
+                bin: Some(Cow::Owned(to_padded_byte_vector(data))),
+                json: Cow::Owned(json_string.into_bytes()),
+            };
+
+            let writer = std::fs::File::create(glb_path).expect("ERROR: Failed to create output .glb file");
+            glb.to_writer(writer)
+                .expect("ERROR: Failed to output glTF binary data");
+        }
+        Output::Standard { binary_path, gltf_path } => {
+            // Output in standard format.
+            // Two files will be produced: a .bin containing binary data and a json file containing
+            // the json string (named as specified by the user). The base filename will be the one
+            // matching the filename in the output path given.
+            use std::io::Write;
+            let writer = std::fs::File::create(gltf_path).expect("ERROR: Failed to create output .gltf file");
+            json::serialize::to_writer_pretty(writer, &root).expect("ERROR: Failed to serialize glTF json");
+
+            let bin = to_padded_byte_vector(data);
+            let mut writer = std::fs::File::create(binary_path).expect("ERROR: Failed to create output .bin file");
+            writer.write_all(&bin).expect("ERROR: Failed to output glTF binary data");
+        }
+    }
 }
