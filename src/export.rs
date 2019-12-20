@@ -1,7 +1,11 @@
+use crate::attrib::*;
+use crate::material::*;
+use crate::texture::*;
 use gltf::json;
+use json::accessor::{ComponentType, Type};
 use std::mem;
 
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::{WriteBytesExt, LE};
 use gut::mesh::topology::NumVertices;
 use gut::mesh::vertex_positions::VertexPositions;
 use gut::ops::*;
@@ -14,8 +18,13 @@ type TriMesh = gut::mesh::TriMesh<f32>;
 
 #[derive(Clone)]
 enum Output {
-    Standard { binary_path: PathBuf, gltf_path: PathBuf },
-    Binary { glb_path: PathBuf },
+    Standard {
+        binary_path: PathBuf,
+        gltf_path: PathBuf,
+    },
+    Binary {
+        glb_path: PathBuf,
+    },
 }
 
 impl Output {
@@ -67,11 +76,12 @@ struct Node {
     pub name: String,
     pub first_frame: usize,
     pub mesh: TriMesh,
+    pub attrib_transfer: AttribTransfer,
     pub morphs: Vec<(usize, Vec<[f32; 3]>)>,
 }
 
 /// Split a sequence of keyframed trimeshes by changes in topology.
-fn into_nodes(meshes: Vec<(String, usize, TriMesh)>, quiet: bool) -> Vec<Node> {
+fn into_nodes(meshes: Vec<(String, usize, TriMesh, AttribTransfer)>, quiet: bool) -> Vec<Node> {
     let mut pb = ProgressBar::new(meshes.len() as u64);
 
     if !quiet {
@@ -81,15 +91,16 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh)>, quiet: bool) -> Vec<Node> {
     let mut out = Vec::new();
     let mut mesh_iter = meshes.into_iter();
 
-    if let Some((name, first_frame, mesh)) = mesh_iter.next() {
+    if let Some((name, first_frame, mesh, attrib_transfer)) = mesh_iter.next() {
         out.push(Node {
             name,
             first_frame,
             mesh,
+            attrib_transfer,
             morphs: Vec::new(),
         });
 
-        while let Some((next_name, frame, next_mesh)) = mesh_iter.next() {
+        while let Some((next_name, frame, next_mesh, next_attrib_transfer)) = mesh_iter.next() {
             if !quiet {
                 pb.inc();
             }
@@ -97,12 +108,15 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh)>, quiet: bool) -> Vec<Node> {
             let Node {
                 ref name,
                 ref mesh,
+                ref attrib_transfer,
                 ref mut morphs,
                 ..
             } = *out.last_mut().unwrap();
             if mesh.num_vertices() == next_mesh.num_vertices()
                 && next_mesh.indices == mesh.indices
                 && name == &next_name
+                && attrib_transfer.2 == next_attrib_transfer.2
+            // same material
             {
                 // Same topology, convert positions to displacements.
                 let displacements: Vec<_> = next_mesh
@@ -117,6 +131,7 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh)>, quiet: bool) -> Vec<Node> {
                     name: next_name,
                     first_frame: frame,
                     mesh: next_mesh,
+                    attrib_transfer: next_attrib_transfer,
                     morphs: Vec::new(),
                 });
             }
@@ -128,13 +143,208 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh)>, quiet: bool) -> Vec<Node> {
     out
 }
 
+// The following builders are missing from gltf_json for some reason so we implement a builder here.
+// These may be obsolete when the gltf crate is updated.
+
+trait BufferViewBuilder {
+    fn new(byte_length: usize, byte_offset: usize) -> json::buffer::View;
+    fn with_target(self, target: json::buffer::Target) -> json::buffer::View;
+    fn with_stride(self, byte_stride: usize) -> json::buffer::View;
+}
+
+impl BufferViewBuilder for json::buffer::View {
+    fn new(byte_length: usize, byte_offset: usize) -> json::buffer::View {
+        json::buffer::View {
+            buffer: json::Index::new(0),
+            byte_length: byte_length as u32,
+            byte_offset: Some(byte_offset as u32),
+            byte_stride: None,
+            extensions: Default::default(),
+            extras: Default::default(),
+            name: None,
+            target: None,
+        }
+    }
+    fn with_target(mut self, target: json::buffer::Target) -> json::buffer::View {
+        self.target = Some(Valid(target));
+        self
+    }
+    fn with_stride(mut self, byte_stride: usize) -> json::buffer::View {
+        self.byte_stride = Some(byte_stride as u32);
+        self
+    }
+}
+
+trait AccessorBuilder {
+    fn new(buf_view: usize, count: usize, generic_comp: ComponentType) -> json::Accessor;
+    fn with_type(self, type_: Type) -> json::Accessor;
+    fn with_component_type(
+        self,
+        component_type: json::accessor::GenericComponentType,
+    ) -> json::Accessor;
+    fn with_min_max<'a, T>(self, min: &'a [T], max: &'a [T]) -> json::Accessor
+    where
+        json::Value: From<&'a [T]>;
+    fn with_sparse(
+        self,
+        count: usize,
+        indices_buf_view: usize,
+        values_buf_view: usize,
+    ) -> json::Accessor;
+}
+
+impl AccessorBuilder for json::Accessor {
+    /// Assumes scalar type.
+    fn new(buf_view: usize, count: usize, generic_component_type: ComponentType) -> json::Accessor {
+        // TODO: when gltf is updated to support sparse accessors without buffer view pointers,
+        //       we need to replace `buffer_view` below with an Option.
+        //       Probably still Some(..) since blender doesn't support proper sparse accessors.
+        json::Accessor {
+            buffer_view: json::Index::new(buf_view as u32).into(),
+            byte_offset: 0,
+            count: count as u32,
+            component_type: Valid(json::accessor::GenericComponentType(generic_component_type)),
+            extensions: Default::default(),
+            extras: Default::default(),
+            type_: Valid(Type::Scalar),
+            min: None,
+            max: None,
+            name: None,
+            normalized: false,
+            sparse: None,
+        }
+    }
+    fn with_type(mut self, type_: Type) -> json::Accessor {
+        self.type_ = Valid(type_);
+        self
+    }
+    fn with_component_type(
+        mut self,
+        component_type: json::accessor::GenericComponentType,
+    ) -> json::Accessor {
+        self.component_type = Valid(component_type);
+        self
+    }
+    fn with_min_max<'a, T>(mut self, min: &'a [T], max: &'a [T]) -> json::Accessor
+    where
+        json::Value: From<&'a [T]>,
+    {
+        self.min = Some(json::Value::from(min));
+        self.max = Some(json::Value::from(max));
+        self
+    }
+    fn with_sparse(
+        mut self,
+        count: usize,
+        indices_buf_view: usize,
+        values_buf_view: usize,
+    ) -> json::Accessor {
+        self.sparse = Some(json::accessor::sparse::Sparse {
+            count: count as u32,
+            indices: json::accessor::sparse::Indices {
+                buffer_view: json::Index::new(indices_buf_view as u32),
+                byte_offset: 0,
+                component_type: Valid(json::accessor::IndexComponentType(ComponentType::U32)),
+                extensions: Default::default(),
+                extras: Default::default(),
+            },
+            values: json::accessor::sparse::Values {
+                buffer_view: json::Index::new(values_buf_view as u32),
+                byte_offset: 0,
+                extensions: Default::default(),
+                extras: Default::default(),
+            },
+            extensions: Default::default(),
+            extras: Default::default(),
+        });
+        self
+    }
+}
+
+/// Generic interface to byteorder
+trait WriteBytes {
+    fn write_bytes(&self, data: &mut Vec<u8>);
+}
+impl WriteBytes for u8 {
+    #[inline]
+    fn write_bytes(&self, data: &mut Vec<u8>) {
+        data.write_u8(*self).unwrap();
+    }
+}
+impl WriteBytes for i8 {
+    #[inline]
+    fn write_bytes(&self, data: &mut Vec<u8>) {
+        data.write_i8(*self).unwrap();
+    }
+}
+impl WriteBytes for i16 {
+    #[inline]
+    fn write_bytes(&self, data: &mut Vec<u8>) {
+        data.write_i16::<LE>(*self).unwrap();
+    }
+}
+impl WriteBytes for u16 {
+    #[inline]
+    fn write_bytes(&self, data: &mut Vec<u8>) {
+        data.write_u16::<LE>(*self).unwrap();
+    }
+}
+impl WriteBytes for u32 {
+    #[inline]
+    fn write_bytes(&self, data: &mut Vec<u8>) {
+        data.write_u32::<LE>(*self).unwrap();
+    }
+}
+impl WriteBytes for f32 {
+    #[inline]
+    fn write_bytes(&self, data: &mut Vec<u8>) {
+        data.write_f32::<LE>(*self).unwrap();
+    }
+}
+
+macro_rules! impl_write_bytes_for_arr {
+    [$($n:expr)+] => {
+        $(
+            impl<T: WriteBytes> WriteBytes for [T; $n] {
+                #[inline]
+                fn write_bytes(&self, data: &mut Vec<u8>) { for x in self { x.write_bytes(data); } }
+            }
+        )*
+    };
+}
+impl_write_bytes_for_arr![2 3 4];
+
+fn write_attribute_data<T: WriteBytes + 'static>(
+    data: &mut Vec<u8>,
+    attrib_info: &AttributeInfo,
+    attrib: &VertexAttribute,
+) {
+    let iter = VertexAttribute::iter::<T>(attrib)
+        .expect(&format!("Unsupported attribute: \"{:?}\"", attrib_info));
+    iter.for_each(|x| x.write_bytes(data));
+}
+
+fn write_tex_attribute_data<T: WriteBytes + 'static>(
+    data: &mut Vec<u8>,
+    attrib_info: &TextureAttributeInfo,
+    attrib: &FaceVertexAttribute,
+) {
+    let iter = FaceVertexAttribute::iter::<T>(attrib).expect(&format!(
+        "Unsupported texture coordinate attribute: \"{:?}\"",
+        attrib_info
+    ));
+    iter.for_each(|x| x.write_bytes(data));
+}
+
 pub(crate) fn export(
-    mut meshes: Vec<(String, usize, TriMesh)>,
+    mut meshes: Vec<(String, usize, TriMesh, AttribTransfer)>,
     output: PathBuf,
     time_step: f32,
     quiet: bool,
+    textures: Vec<TextureInfo>,
+    materials: Vec<MaterialInfo>,
 ) {
-    meshes.sort_by(|(name_a, frame_a, _), (name_b, frame_b, _)| {
+    meshes.sort_by(|(name_a, frame_a, _, _), (name_b, frame_b, _, _)| {
         // First sort by name
         name_a.cmp(name_b).then(frame_a.cmp(&frame_b))
     });
@@ -160,6 +370,7 @@ pub(crate) fn export(
         name,
         first_frame,
         mesh,
+        attrib_transfer,
         morphs,
     } in morphed_meshes.into_iter()
     {
@@ -174,230 +385,184 @@ pub(crate) fn export(
         // Push indices to data buffer.
         let num_indices = indices.len() * 3;
         let byte_length = num_indices * mem::size_of::<u32>();
-        let indices_view = json::buffer::View {
-            buffer: json::Index::new(0),
-            byte_length: byte_length as u32,
-            byte_offset: Some(data.len() as u32),
-            byte_stride: None,
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            target: Some(Valid(json::buffer::Target::ElementArrayBuffer)),
-        };
+        let indices_view = json::buffer::View::new(byte_length, data.len())
+            .with_target(json::buffer::Target::ElementArrayBuffer);
+
         let mut max_index = 0;
         for idx in indices.into_iter() {
             for &i in idx.iter() {
                 max_index = max_index.max(i as u32);
-                data.write_u32::<LittleEndian>(i as u32).unwrap();
+                data.write_u32::<LE>(i as u32).unwrap();
             }
         }
-        let idx_acc = json::Accessor {
-            buffer_view: Some(json::Index::new(buffer_views.len() as u32)),
-            byte_offset: 0,
-            count: num_indices as u32,
-            component_type: Valid(json::accessor::GenericComponentType(
-                json::accessor::ComponentType::U32,
-            )),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: Valid(json::accessor::Type::Scalar),
-            min: Some(json::Value::from(&[0][..])),
-            max: Some(json::Value::from(&[max_index][..])),
-            name: None,
-            normalized: false,
-            sparse: None,
-        };
+
+        let idx_acc = json::Accessor::new(buffer_views.len(), num_indices, ComponentType::U32)
+            .with_min_max(&[0][..], &[max_index][..]);
+
         buffer_views.push(indices_view);
         let idx_acc_index = accessors.len() as u32;
         accessors.push(idx_acc);
 
         // Push positions to data buffer.
         let byte_length = vertex_positions.len() * mem::size_of::<[f32; 3]>();
-        let pos_view = json::buffer::View {
-            buffer: json::Index::new(0),
-            byte_length: byte_length as u32,
-            byte_offset: Some(data.len() as u32),
-            byte_stride: Some(mem::size_of::<[f32; 3]>() as u32),
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            target: Some(Valid(json::buffer::Target::ArrayBuffer)),
-        };
+        let pos_view = json::buffer::View::new(byte_length, data.len())
+            .with_stride(mem::size_of::<[f32; 3]>())
+            .with_target(json::buffer::Target::ArrayBuffer);
+
         let pos_view_index = buffer_views.len();
         buffer_views.push(pos_view);
 
         for pos in vertex_positions.iter() {
             for &coord in pos.iter() {
-                data.write_f32::<LittleEndian>(coord).unwrap();
+                data.write_f32::<LE>(coord).unwrap();
             }
         }
 
-        let pos_acc = json::Accessor {
-            buffer_view: Some(json::Index::new(pos_view_index as u32)),
-            byte_offset: 0,
-            count: vertex_positions.len() as u32,
-            component_type: Valid(json::accessor::GenericComponentType(
-                json::accessor::ComponentType::F32,
-            )),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: Valid(json::accessor::Type::Vec3),
-            min: Some(json::Value::from(&bbox.min_corner()[..])),
-            max: Some(json::Value::from(&bbox.max_corner()[..])),
-            name: None,
-            normalized: false,
-            sparse: None,
-        };
+        let pos_acc =
+            json::Accessor::new(pos_view_index, vertex_positions.len(), ComponentType::F32)
+                .with_type(Type::Vec3)
+                .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
+
         let pos_acc_index = accessors.len() as u32;
         accessors.push(pos_acc);
 
-        // Initialize animation frames
+        // Push custom vertex attributes to data buffer.
+        let attrib_acc_indices: Vec<_> = attrib_transfer.0.iter().map(|(attrib_info, attrib)| {
+            let byte_length = attrib.buffer_ref().as_bytes().len();
+            let attrib_view = json::buffer::View::new(byte_length, data.len())
+                .with_stride(call_typed_fn!(attrib_info => mem::size_of :: <_>()))
+                .with_target(json::buffer::Target::ArrayBuffer);
 
+            let attrib_view_index = buffer_views.len();
+            buffer_views.push(attrib_view);
+
+            call_typed_fn!(attrib_info => self::write_attribute_data::<_>(&mut data, attrib_info, &attrib));
+
+            let attrib_acc = json::Accessor::new(
+                attrib_view_index,
+                attrib.len(),
+                attrib_info.component_type,
+            )
+            .with_type(attrib_info.type_);
+
+            let attrib_acc_index = accessors.len() as u32;
+            accessors.push(attrib_acc);
+            attrib_acc_index
+        }).collect();
+
+        // Push texture coordinate attributes to data buffer.
+        attrib_transfer.1.iter().for_each(|(attrib_info, attrib)| {
+            let byte_length = attrib.buffer_ref().as_bytes().len();
+            let num_bytes = match attrib_info.component_type {
+                ComponentType::U8 => mem::size_of::<u8>(),
+                ComponentType::U16 => mem::size_of::<u16>(),
+                ComponentType::F32 => mem::size_of::<f32>(),
+                t => panic!(
+                    "Invalid texture coordinate attribute type detected: {:?}",
+                    t
+                ),
+            };
+            let attrib_view = json::buffer::View::new(byte_length, data.len())
+                .with_stride(num_bytes)
+                .with_target(json::buffer::Target::ArrayBuffer);
+
+            let attrib_view_index = buffer_views.len();
+            buffer_views.push(attrib_view);
+
+            match attrib_info.component_type {
+                ComponentType::U8 => {
+                    write_tex_attribute_data::<u8>(&mut data, attrib_info, &attrib)
+                }
+                ComponentType::U16 => {
+                    write_tex_attribute_data::<u16>(&mut data, attrib_info, &attrib)
+                }
+                ComponentType::F32 => {
+                    write_tex_attribute_data::<f32>(&mut data, attrib_info, &attrib)
+                }
+                t => panic!(
+                    "Invalid texture coordinate attribute type detected: {:?}",
+                    t
+                ),
+            }
+
+            let attrib_acc =
+                json::Accessor::new(attrib_view_index, attrib.len(), attrib_info.component_type)
+                    .with_type(Type::Vec2);
+
+            //let attrib_acc_index = accessors.len() as u32;
+            accessors.push(attrib_acc);
+            //attrib_acc_index
+        });
+
+        // Initialize animation frames
         let num_animation_frames = morphs.len() + 1;
 
         // Sparse weight indices
         let byte_length = morphs.len() * mem::size_of::<u32>();
-        let weight_indices_view = json::buffer::View {
-            buffer: json::Index::new(0),
-            byte_length: byte_length as u32,
-            byte_offset: Some(data.len() as u32),
-            byte_stride: None, //Some(mem::size_of::<u32>() as u32),
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            target: None,
-        };
+        let weight_indices_view = json::buffer::View::new(byte_length, data.len());
+
         // Note: first frame is all zeros
         for i in 0..morphs.len() {
             // all frames but first have a non-zero weight
             let index = morphs.len() * (i + 1) + i;
-            data.write_u32::<LittleEndian>(index as u32).unwrap();
+            data.write_u32::<LE>(index as u32).unwrap();
         }
         let weight_indices_view_index = buffer_views.len();
         buffer_views.push(weight_indices_view);
 
         // Initialized weights
-        let initial_weights_view_index = if cfg!(feature = "empty-sparse-base-buffer-view") {
-            None
-        } else {
-            let byte_length = num_animation_frames * morphs.len() * mem::size_of::<f32>();
-            let initial_weights_view = json::buffer::View {
-                buffer: json::Index::new(0),
-                byte_length: byte_length as u32,
-                byte_offset: Some(data.len() as u32),
-                byte_stride: None,
-                extensions: Default::default(),
-                extras: Default::default(),
-                name: None,
-                target: None,
-            };
-            for _ in 0..(num_animation_frames * morphs.len()) {
-                data.write_f32::<LittleEndian>(0.0).unwrap();
-            }
-            let initial_weights_view_index = Some(json::Index::new(buffer_views.len() as u32));
-            buffer_views.push(initial_weights_view);
-            initial_weights_view_index
-        };
+        let byte_length = num_animation_frames * morphs.len() * mem::size_of::<f32>();
+        let initial_weights_view = json::buffer::View::new(byte_length, data.len());
+
+        for _ in 0..(num_animation_frames * morphs.len()) {
+            data.write_f32::<LE>(0.0).unwrap();
+        }
+        let initial_weights_view_index = buffer_views.len();
+        buffer_views.push(initial_weights_view);
 
         // Output animation frames as weights
-        let weight_view = json::buffer::View {
-            buffer: json::Index::new(0),
-            byte_length: (morphs.len() * mem::size_of::<f32>()) as u32,
-            byte_offset: Some(data.len() as u32),
-            byte_stride: None,
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            target: None,
-        };
+        let weight_view = json::buffer::View::new(morphs.len() * mem::size_of::<f32>(), data.len());
+
         let weight_view_index = buffer_views.len();
         buffer_views.push(weight_view);
 
         for _ in 0..morphs.len() {
-            data.write_f32::<LittleEndian>(1.0).unwrap();
+            data.write_f32::<LE>(1.0).unwrap();
         }
 
         // Weights accessor for all frames
-        let weights_acc = json::Accessor {
-            buffer_view: initial_weights_view_index,
-            byte_offset: 0,
-            count: (num_animation_frames * morphs.len()) as u32,
-            component_type: Valid(json::accessor::GenericComponentType(
-                json::accessor::ComponentType::F32,
-            )),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: Valid(json::accessor::Type::Scalar),
-            min: Some(json::Value::from(&[0.0][..])),
-            max: Some(json::Value::from(&[1.0][..])),
-            name: None,
-            normalized: false,
-            sparse: Some(json::accessor::sparse::Sparse {
-                count: morphs.len() as u32,
-                indices: json::accessor::sparse::Indices {
-                    buffer_view: json::Index::new(weight_indices_view_index as u32),
-                    byte_offset: 0,
-                    component_type: Valid(json::accessor::IndexComponentType(
-                        json::accessor::ComponentType::U32,
-                    )),
-                    extensions: Default::default(),
-                    extras: Default::default(),
-                },
-                values: json::accessor::sparse::Values {
-                    buffer_view: json::Index::new(weight_view_index as u32),
-                    byte_offset: 0,
-                    extensions: Default::default(),
-                    extras: Default::default(),
-                },
-                extensions: Default::default(),
-                extras: Default::default(),
-            }),
-        };
+        let weights_acc = json::Accessor::new(
+            initial_weights_view_index,
+            num_animation_frames * morphs.len(),
+            ComponentType::F32,
+        )
+        .with_min_max(&[0.0][..], &[1.0][..])
+        .with_sparse(morphs.len(), weight_indices_view_index, weight_view_index);
+
         let weights_acc_index = accessors.len() as u32;
         accessors.push(weights_acc);
 
         // Animation keyframe times
         let byte_length = num_animation_frames * mem::size_of::<f32>();
-        let time_view = json::buffer::View {
-            buffer: json::Index::new(0),
-            byte_length: byte_length as u32,
-            byte_offset: Some(data.len() as u32),
-            byte_stride: None, //Some(mem::size_of::<f32>() as u32),
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            target: None,
-        };
+        let time_view = json::buffer::View::new(byte_length, data.len());
 
         let mut min_time = first_frame as f32 * time_step;
         let mut max_time = first_frame as f32 * time_step;
-        data.write_f32::<LittleEndian>(first_frame as f32 * time_step)
+        data.write_f32::<LE>(first_frame as f32 * time_step)
             .unwrap();
         for (frame, _) in morphs.iter() {
             let time = *frame as f32 * time_step;
             min_time = min_time.min(time);
             max_time = max_time.max(time);
-            data.write_f32::<LittleEndian>(time).unwrap();
+            data.write_f32::<LE>(time).unwrap();
         }
         let time_view_index = buffer_views.len();
         buffer_views.push(time_view);
 
-        let time_acc = json::Accessor {
-            buffer_view: Some(json::Index::new(time_view_index as u32)),
-            byte_offset: 0,
-            count: num_animation_frames as u32,
-            component_type: Valid(json::accessor::GenericComponentType(
-                json::accessor::ComponentType::F32,
-            )),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: Valid(json::accessor::Type::Scalar),
-            min: Some(json::Value::from(&[min_time][..])),
-            max: Some(json::Value::from(&[max_time][..])),
-            name: None,
-            normalized: false,
-            sparse: None,
-        };
+        let time_acc =
+            json::Accessor::new(time_view_index, num_animation_frames, ComponentType::F32)
+                .with_min_max(&[min_time][..], &[max_time][..]);
+
         let time_acc_index = accessors.len() as u32;
         accessors.push(time_acc);
 
@@ -408,16 +573,10 @@ pub(crate) fn export(
                 pb.inc();
             }
             let byte_length = displacements.len() * mem::size_of::<[f32; 3]>();
-            let disp_view = json::buffer::View {
-                buffer: json::Index::new(0),
-                byte_length: byte_length as u32,
-                byte_offset: Some(data.len() as u32),
-                byte_stride: Some(mem::size_of::<[f32; 3]>() as u32),
-                extensions: Default::default(),
-                extras: Default::default(),
-                name: None,
-                target: Some(Valid(json::buffer::Target::ArrayBuffer)),
-            };
+
+            let disp_view = json::buffer::View::new(byte_length, data.len())
+                .with_stride(mem::size_of::<[f32; 3]>())
+                .with_target(json::buffer::Target::ArrayBuffer);
             let disp_view_index = buffer_views.len();
             buffer_views.push(disp_view);
 
@@ -425,26 +584,14 @@ pub(crate) fn export(
             for disp in displacements.iter() {
                 bbox.absorb(*disp);
                 for &coord in disp.iter() {
-                    data.write_f32::<LittleEndian>(coord).unwrap();
+                    data.write_f32::<LE>(coord).unwrap();
                 }
             }
 
-            let disp_acc = json::Accessor {
-                buffer_view: Some(json::Index::new(disp_view_index as u32)),
-                byte_offset: 0,
-                count: displacements.len() as u32,
-                component_type: Valid(json::accessor::GenericComponentType(
-                    json::accessor::ComponentType::F32,
-                )),
-                extensions: Default::default(),
-                extras: Default::default(),
-                type_: Valid(json::accessor::Type::Vec3),
-                min: Some(json::Value::from(&bbox.min_corner()[..])),
-                max: Some(json::Value::from(&bbox.max_corner()[..])),
-                name: None,
-                normalized: false,
-                sparse: None,
-            };
+            let disp_acc =
+                json::Accessor::new(disp_view_index, displacements.len(), ComponentType::F32)
+                    .with_type(Type::Vec3)
+                    .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
             let disp_acc_index = accessors.len() as u32;
             accessors.push(disp_acc);
 
@@ -490,6 +637,26 @@ pub(crate) fn export(
                     Valid(json::mesh::Semantic::Positions),
                     json::Index::new(pos_acc_index),
                 );
+                // Texture coordinate attributes
+                for ((attrib_info, _), &attrib_acc_index) in
+                    attrib_transfer.1.iter().zip(attrib_acc_indices.iter())
+                {
+                    map.insert(
+                        Valid(json::mesh::Semantic::TexCoords(attrib_info.id)),
+                        json::Index::new(attrib_acc_index),
+                    );
+                }
+                // Custom attributes
+                for ((attrib_info, _), &attrib_acc_index) in
+                    attrib_transfer.0.iter().zip(attrib_acc_indices.iter())
+                {
+                    use heck::ShoutySnakeCase;
+                    let name = format!("_{}", attrib_info.name.to_shouty_snake_case());
+                    map.insert(
+                        Valid(json::mesh::Semantic::Extras(name)),
+                        json::Index::new(attrib_acc_index),
+                    );
+                }
                 map
             },
             extensions: Default::default(),
@@ -524,6 +691,151 @@ pub(crate) fn export(
         });
     }
 
+    // Populate images, samplers and textures
+    let mut samplers = Vec::new();
+    let mut images = Vec::new();
+    let textures: Vec<_> = textures
+        .into_iter()
+        .filter_map(
+            |TextureInfo {
+                 image,
+                 wrap_s,
+                 wrap_t,
+                 mag_filter,
+                 min_filter,
+             }| {
+                let image = match image {
+                    ImageInfo::Uri(path) => json::image::Image {
+                        name: None,
+                        buffer_view: None,
+                        mime_type: None,
+                        uri: Some(path),
+                        extensions: Default::default(),
+                        extras: Default::default(),
+                    },
+                    ImageInfo::Embed(path) => {
+                        // Determine the type
+                        let path = std::path::PathBuf::from(path);
+                        let mime_type =
+                            path.extension()
+                                .and_then(|ext| ext.to_str())
+                                .and_then(|ext| match ext.to_lowercase().as_str() {
+                                    "jpeg" | "jpg" => Some("image/jpeg".to_string()),
+                                    "png" => Some("image/png".to_string()),
+                                    _ => None,
+                                });
+
+                        if mime_type.is_none() {
+                            eprintln!(
+                                "WARNING: Image must be in png or jpg format: {:?}. Skipping...",
+                                &path
+                            );
+                            return None;
+                        }
+
+                        let mime_type = mime_type.unwrap();
+
+                        // Read the image directly into the buffer.
+                        if let Ok(mut file) = std::fs::File::open(&path) {
+                            use std::io::Read;
+                            let orig_len = data.len();
+                            if let Ok(bytes_read) = file.read_to_end(&mut data) {
+                                // Instead of guessing the size of the image we just wait until reading is
+                                // done.
+                                assert_eq!(bytes_read, data.len() - orig_len);
+                                let image_view = json::buffer::View::new(bytes_read, orig_len);
+                                let image_view_index = buffer_views.len();
+                                buffer_views.push(image_view);
+                                json::image::Image {
+                                    name: None,
+                                    buffer_view: json::Index::new(image_view_index as u32).into(),
+                                    mime_type: json::image::MimeType(mime_type).into(),
+                                    uri: None,
+                                    extensions: Default::default(),
+                                    extras: Default::default(),
+                                }
+                            } else {
+                                // Truncate the data vec back to original size to avoid corruption.
+                                data.resize(orig_len, 0);
+                                eprintln!(
+                                    "WARNING: Failed to read image: {:?}. Skipping...",
+                                    &path
+                                );
+                                return None;
+                            }
+                        } else {
+                            eprintln!("WARNING: Failed to read image: {:?}. Skipping...", &path);
+                            return None;
+                        }
+                    }
+                };
+                let image_index = images.len();
+                images.push(image);
+
+                let sampler = json::texture::Sampler {
+                    mag_filter: mag_filter.into(),
+                    min_filter: min_filter.into(),
+                    wrap_s: wrap_s.into(),
+                    wrap_t: wrap_t.into(),
+                    name: None,
+                    extensions: Default::default(),
+                    extras: Default::default(),
+                };
+                let sampler_index = samplers.len();
+                samplers.push(sampler);
+
+                Some(json::texture::Texture {
+                    source: json::Index::new(image_index as u32).into(),
+                    sampler: json::Index::new(sampler_index as u32).into(),
+                    name: None,
+                    extensions: Default::default(),
+                    extras: Default::default(),
+                })
+            },
+        )
+        .collect();
+
+    // Populate materials
+    let materials: Vec<_> = materials
+        .iter()
+        .map(
+            |MaterialInfo {
+                 name,
+                 base_color,
+                 base_texture,
+                 metallic,
+                 roughness,
+             }| {
+                json::Material {
+                    name: name.to_owned(),
+                    alpha_cutoff: json::material::AlphaCutoff(0.5),
+                    alpha_mode: Valid(json::material::AlphaMode::Opaque),
+                    double_sided: false,
+                    pbr_metallic_roughness: json::material::PbrMetallicRoughness {
+                        base_color_factor: json::material::PbrBaseColorFactor(*base_color),
+                        base_color_texture: base_texture.map(|t| json::texture::Info {
+                            index: json::Index::new(t.index),
+                            tex_coord: t.texcoord,
+                            extensions: Default::default(),
+                            extras: Default::default(),
+                        }),
+                        metallic_factor: json::material::StrengthFactor(*metallic),
+                        roughness_factor: json::material::StrengthFactor(*roughness),
+                        metallic_roughness_texture: None,
+                        extensions: Default::default(),
+                        extras: Default::default(),
+                    },
+                    normal_texture: None,
+                    occlusion_texture: None,
+                    emissive_texture: None,
+                    emissive_factor: json::material::EmissiveFactor([0.0, 0.0, 0.0]),
+                    extensions: Default::default(),
+                    extras: Default::default(),
+                }
+            },
+        )
+        .collect();
+
     if !quiet {
         pb.finish();
         println!("Writing glTF to File...");
@@ -538,8 +850,13 @@ pub(crate) fn export(
         name: None,
         uri: match &output {
             Output::Binary { .. } => None,
-            Output::Standard { binary_path, .. } => Some(binary_path.to_str().expect("ERROR: Path is not valid UTF-8").to_string()),
-        }
+            Output::Standard { binary_path, .. } => Some(
+                binary_path
+                    .to_str()
+                    .expect("ERROR: Path is not valid UTF-8")
+                    .to_string(),
+            ),
+        },
     };
 
     let num_nodes = nodes.len();
@@ -561,6 +878,10 @@ pub(crate) fn export(
             name: None,
             nodes: (0..num_nodes).map(|i| json::Index::new(i as u32)).collect(),
         }],
+        images,
+        samplers,
+        textures,
+        materials,
         ..Default::default()
     };
 
@@ -581,22 +902,31 @@ pub(crate) fn export(
                 json: Cow::Owned(json_string.into_bytes()),
             };
 
-            let writer = std::fs::File::create(glb_path).expect("ERROR: Failed to create output .glb file");
+            let writer =
+                std::fs::File::create(glb_path).expect("ERROR: Failed to create output .glb file");
             glb.to_writer(writer)
                 .expect("ERROR: Failed to output glTF binary data");
         }
-        Output::Standard { binary_path, gltf_path } => {
+        Output::Standard {
+            binary_path,
+            gltf_path,
+        } => {
             // Output in standard format.
             // Two files will be produced: a .bin containing binary data and a json file containing
             // the json string (named as specified by the user). The base filename will be the one
             // matching the filename in the output path given.
             use std::io::Write;
-            let writer = std::fs::File::create(gltf_path).expect("ERROR: Failed to create output .gltf file");
-            json::serialize::to_writer_pretty(writer, &root).expect("ERROR: Failed to serialize glTF json");
+            let writer = std::fs::File::create(gltf_path)
+                .expect("ERROR: Failed to create output .gltf file");
+            json::serialize::to_writer_pretty(writer, &root)
+                .expect("ERROR: Failed to serialize glTF json");
 
             let bin = to_padded_byte_vector(data);
-            let mut writer = std::fs::File::create(binary_path).expect("ERROR: Failed to create output .bin file");
-            writer.write_all(&bin).expect("ERROR: Failed to output glTF binary data");
+            let mut writer = std::fs::File::create(binary_path)
+                .expect("ERROR: Failed to create output .bin file");
+            writer
+                .write_all(&bin)
+                .expect("ERROR: Failed to output glTF binary data");
         }
     }
 }
