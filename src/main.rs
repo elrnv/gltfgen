@@ -116,11 +116,17 @@ fn main() -> Result<(), Error> {
         }
         entry.ok().and_then(|path| {
             let path_str = path.to_string_lossy();
-            let caps = regex.captures(&path_str).expect(&format!(
-                "ERROR: Regex '{}' did not match path '{}'",
-                regex.as_str(),
-                &path_str
-            ));
+            let caps = match regex.captures(&path_str) {
+                Some(caps) => caps,
+                None => {
+                    eprintln!(
+                        "WARNING: Path '{}' skipped since regex '{}' did not match.",
+                        &path_str,
+                        regex.as_str(),
+                    );
+                    return None;
+                },
+            };
             let frame_cap = caps.name("frame");
             let frame = frame_cap
                 .map(|frame_match| {
