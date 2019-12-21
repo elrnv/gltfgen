@@ -2,7 +2,8 @@ use crate::attrib::*;
 use crate::material::*;
 use crate::texture::*;
 use gltf::json;
-use json::accessor::{ComponentType, Type};
+use json::accessor::ComponentType as GltfComponentType;
+use json::accessor::Type as GltfType;
 use std::mem;
 
 use byteorder::{WriteBytesExt, LE};
@@ -176,8 +177,8 @@ impl BufferViewBuilder for json::buffer::View {
 }
 
 trait AccessorBuilder {
-    fn new(buf_view: usize, count: usize, generic_comp: ComponentType) -> json::Accessor;
-    fn with_type(self, type_: Type) -> json::Accessor;
+    fn new(buf_view: usize, count: usize, generic_comp: GltfComponentType) -> json::Accessor;
+    fn with_type(self, type_: GltfType) -> json::Accessor;
     fn with_component_type(
         self,
         component_type: json::accessor::GenericComponentType,
@@ -195,7 +196,11 @@ trait AccessorBuilder {
 
 impl AccessorBuilder for json::Accessor {
     /// Assumes scalar type.
-    fn new(buf_view: usize, count: usize, generic_component_type: ComponentType) -> json::Accessor {
+    fn new(
+        buf_view: usize,
+        count: usize,
+        generic_component_type: GltfComponentType,
+    ) -> json::Accessor {
         // TODO: when gltf is updated to support sparse accessors without buffer view pointers,
         //       we need to replace `buffer_view` below with an Option.
         //       Probably still Some(..) since blender doesn't support proper sparse accessors.
@@ -206,7 +211,7 @@ impl AccessorBuilder for json::Accessor {
             component_type: Valid(json::accessor::GenericComponentType(generic_component_type)),
             extensions: Default::default(),
             extras: Default::default(),
-            type_: Valid(Type::Scalar),
+            type_: Valid(GltfType::Scalar),
             min: None,
             max: None,
             name: None,
@@ -214,7 +219,7 @@ impl AccessorBuilder for json::Accessor {
             sparse: None,
         }
     }
-    fn with_type(mut self, type_: Type) -> json::Accessor {
+    fn with_type(mut self, type_: GltfType) -> json::Accessor {
         self.type_ = Valid(type_);
         self
     }
@@ -244,7 +249,7 @@ impl AccessorBuilder for json::Accessor {
             indices: json::accessor::sparse::Indices {
                 buffer_view: json::Index::new(indices_buf_view as u32),
                 byte_offset: 0,
-                component_type: Valid(json::accessor::IndexComponentType(ComponentType::U32)),
+                component_type: Valid(json::accessor::IndexComponentType(GltfComponentType::U32)),
                 extensions: Default::default(),
                 extras: Default::default(),
             },
@@ -314,24 +319,21 @@ macro_rules! impl_write_bytes_for_arr {
 }
 impl_write_bytes_for_arr![2 3 4];
 
-fn write_attribute_data<T: WriteBytes + 'static>(
-    data: &mut Vec<u8>,
-    attrib_info: &AttributeInfo,
-    attrib: &VertexAttribute,
-) {
-    let iter = VertexAttribute::iter::<T>(attrib)
-        .expect(&format!("Unsupported attribute: \"{:?}\"", attrib_info));
+fn write_attribute_data<T: WriteBytes + 'static>(data: &mut Vec<u8>, attrib: &Attribute) {
+    let iter = VertexAttribute::iter::<T>(&attrib.attribute).expect(&format!(
+        "Unsupported attribute: \"{:?}\"",
+        (attrib.name.as_str(), attrib.type_)
+    ));
     iter.for_each(|x| x.write_bytes(data));
 }
 
 fn write_tex_attribute_data<T: WriteBytes + 'static>(
     data: &mut Vec<u8>,
-    attrib_info: &TextureAttributeInfo,
-    attrib: &FaceVertexAttribute,
+    attrib: &TextureAttribute,
 ) {
-    let iter = FaceVertexAttribute::iter::<T>(attrib).expect(&format!(
+    let iter = FaceVertexAttribute::iter::<T>(&attrib.attribute).expect(&format!(
         "Unsupported texture coordinate attribute: \"{:?}\"",
-        attrib_info
+        (attrib.name.as_str(), attrib.component_type)
     ));
     iter.for_each(|x| x.write_bytes(data));
 }
@@ -396,7 +398,7 @@ pub(crate) fn export(
             }
         }
 
-        let idx_acc = json::Accessor::new(buffer_views.len(), num_indices, ComponentType::U32)
+        let idx_acc = json::Accessor::new(buffer_views.len(), num_indices, GltfComponentType::U32)
             .with_min_max(&[0][..], &[max_index][..]);
 
         buffer_views.push(indices_view);
@@ -418,42 +420,47 @@ pub(crate) fn export(
             }
         }
 
-        let pos_acc =
-            json::Accessor::new(pos_view_index, vertex_positions.len(), ComponentType::F32)
-                .with_type(Type::Vec3)
-                .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
+        let pos_acc = json::Accessor::new(
+            pos_view_index,
+            vertex_positions.len(),
+            GltfComponentType::F32,
+        )
+        .with_type(GltfType::Vec3)
+        .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
 
         let pos_acc_index = accessors.len() as u32;
         accessors.push(pos_acc);
 
         // Push custom vertex attributes to data buffer.
-        let attrib_acc_indices: Vec<_> = attrib_transfer.0.iter().map(|(attrib_info, attrib)| {
-            let byte_length = attrib.buffer_ref().as_bytes().len();
-            let attrib_view = json::buffer::View::new(byte_length, data.len())
-                .with_stride(call_typed_fn!(attrib_info => mem::size_of :: <_>()))
-                .with_target(json::buffer::Target::ArrayBuffer);
+        let attrib_acc_indices: Vec<_> = attrib_transfer
+            .0
+            .iter()
+            .map(|attrib| {
+                let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
+                let attrib_view = json::buffer::View::new(byte_length, data.len())
+                    .with_stride(call_typed_fn!(attrib.type_ => mem::size_of :: <_>()))
+                    .with_target(json::buffer::Target::ArrayBuffer);
 
-            let attrib_view_index = buffer_views.len();
-            buffer_views.push(attrib_view);
+                let attrib_view_index = buffer_views.len();
+                buffer_views.push(attrib_view);
 
-            call_typed_fn!(attrib_info => self::write_attribute_data::<_>(&mut data, attrib_info, &attrib));
+                call_typed_fn!(attrib.type_ => self::write_attribute_data::<_>(&mut data, &attrib));
 
-            let attrib_acc = json::Accessor::new(
-                attrib_view_index,
-                attrib.len(),
-                attrib_info.component_type,
-            )
-            .with_type(attrib_info.type_);
+                let (type_, component_type) = attrib.type_.into();
+                let attrib_acc =
+                    json::Accessor::new(attrib_view_index, attrib.attribute.len(), component_type)
+                        .with_type(type_);
 
-            let attrib_acc_index = accessors.len() as u32;
-            accessors.push(attrib_acc);
-            attrib_acc_index
-        }).collect();
+                let attrib_acc_index = accessors.len() as u32;
+                accessors.push(attrib_acc);
+                attrib_acc_index
+            })
+            .collect();
 
         // Push texture coordinate attributes to data buffer.
-        attrib_transfer.1.iter().for_each(|(attrib_info, attrib)| {
-            let byte_length = attrib.buffer_ref().as_bytes().len();
-            let num_bytes = match attrib_info.component_type {
+        attrib_transfer.1.iter().for_each(|attrib| {
+            let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
+            let num_bytes = match attrib.component_type {
                 ComponentType::U8 => mem::size_of::<u8>(),
                 ComponentType::U16 => mem::size_of::<u16>(),
                 ComponentType::F32 => mem::size_of::<f32>(),
@@ -469,25 +476,22 @@ pub(crate) fn export(
             let attrib_view_index = buffer_views.len();
             buffer_views.push(attrib_view);
 
-            match attrib_info.component_type {
-                ComponentType::U8 => {
-                    write_tex_attribute_data::<u8>(&mut data, attrib_info, &attrib)
-                }
-                ComponentType::U16 => {
-                    write_tex_attribute_data::<u16>(&mut data, attrib_info, &attrib)
-                }
-                ComponentType::F32 => {
-                    write_tex_attribute_data::<f32>(&mut data, attrib_info, &attrib)
-                }
+            match attrib.component_type {
+                ComponentType::U8 => write_tex_attribute_data::<u8>(&mut data, &attrib),
+                ComponentType::U16 => write_tex_attribute_data::<u16>(&mut data, &attrib),
+                ComponentType::F32 => write_tex_attribute_data::<f32>(&mut data, &attrib),
                 t => panic!(
                     "Invalid texture coordinate attribute type detected: {:?}",
                     t
                 ),
             }
 
-            let attrib_acc =
-                json::Accessor::new(attrib_view_index, attrib.len(), attrib_info.component_type)
-                    .with_type(Type::Vec2);
+            let attrib_acc = json::Accessor::new(
+                attrib_view_index,
+                attrib.attribute.len(),
+                attrib.component_type.into(),
+            )
+            .with_type(GltfType::Vec2);
 
             //let attrib_acc_index = accessors.len() as u32;
             accessors.push(attrib_acc);
@@ -534,7 +538,7 @@ pub(crate) fn export(
         let weights_acc = json::Accessor::new(
             initial_weights_view_index,
             num_animation_frames * morphs.len(),
-            ComponentType::F32,
+            GltfComponentType::F32,
         )
         .with_min_max(&[0.0][..], &[1.0][..])
         .with_sparse(morphs.len(), weight_indices_view_index, weight_view_index);
@@ -559,9 +563,12 @@ pub(crate) fn export(
         let time_view_index = buffer_views.len();
         buffer_views.push(time_view);
 
-        let time_acc =
-            json::Accessor::new(time_view_index, num_animation_frames, ComponentType::F32)
-                .with_min_max(&[min_time][..], &[max_time][..]);
+        let time_acc = json::Accessor::new(
+            time_view_index,
+            num_animation_frames,
+            GltfComponentType::F32,
+        )
+        .with_min_max(&[min_time][..], &[max_time][..]);
 
         let time_acc_index = accessors.len() as u32;
         accessors.push(time_acc);
@@ -589,8 +596,8 @@ pub(crate) fn export(
             }
 
             let disp_acc =
-                json::Accessor::new(disp_view_index, displacements.len(), ComponentType::F32)
-                    .with_type(Type::Vec3)
+                json::Accessor::new(disp_view_index, displacements.len(), GltfComponentType::F32)
+                    .with_type(GltfType::Vec3)
                     .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
             let disp_acc_index = accessors.len() as u32;
             accessors.push(disp_acc);
@@ -638,20 +645,20 @@ pub(crate) fn export(
                     json::Index::new(pos_acc_index),
                 );
                 // Texture coordinate attributes
-                for ((attrib_info, _), &attrib_acc_index) in
+                for (TextureAttribute { id, .. }, &attrib_acc_index) in
                     attrib_transfer.1.iter().zip(attrib_acc_indices.iter())
                 {
                     map.insert(
-                        Valid(json::mesh::Semantic::TexCoords(attrib_info.id)),
+                        Valid(json::mesh::Semantic::TexCoords(*id)),
                         json::Index::new(attrib_acc_index),
                     );
                 }
                 // Custom attributes
-                for ((attrib_info, _), &attrib_acc_index) in
+                for (Attribute { name, .. }, &attrib_acc_index) in
                     attrib_transfer.0.iter().zip(attrib_acc_indices.iter())
                 {
                     use heck::ShoutySnakeCase;
-                    let name = format!("_{}", attrib_info.name.to_shouty_snake_case());
+                    let name = format!("_{}", name.to_shouty_snake_case());
                     map.insert(
                         Valid(json::mesh::Semantic::Extras(name)),
                         json::Index::new(attrib_acc_index),

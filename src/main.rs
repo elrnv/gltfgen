@@ -40,14 +40,16 @@ struct Opt {
     #[structopt(parse(from_str))]
     pattern: String,
 
-    /// Frames per second. 1.0/fps gives the time step between discrete frames.
-    #[structopt(short, long)]
-    fps: Option<usize>,
+    /// Frames per second. 1/fps gives the time step between discrete frames. If 'time_step' is
+    /// also provided, this parameter is ignored.
+    #[structopt(short, long, default_value = "24")]
+    fps: usize,
 
-    /// Time step in seconds between discrete frames. If 'fps' is also provided, this parameter is
-    /// ignored.
-    #[structopt(short, long, default_value = "1.0")]
-    time_step: f32,
+    /// Time step in seconds between discrete frames. Specifying this option overrides the time
+    /// step that would be computed from 'fps', which is set to 24 by default.
+    /// This means that the default 'time_step' is equivalently 1/24.
+    #[structopt(short, long)]
+    time_step: Option<f32>,
 
     /// Reverse polygon orientations in the output glTF meshes.
     #[structopt(short, long)]
@@ -72,13 +74,9 @@ struct Opt {
     #[structopt(short, long, default_value = "1")]
     step: usize,
 
-    /// A list of custom vertex attributes and their types to transfer provided in a common type
-    /// ascription syntax:
+    /// A list of custom vertex attributes and their types to transfer provided as a dictionary:
     ///
-    /// "attribute1: type1<component_type1>" "attribute2: type2<component_type2>"
-    ///
-    /// Note: Quotation marks are necessary to escale the < and > symbols. It may also be
-    ///       necessary to specify this option last.
+    /// '{"attribute1":type1(component1), "attribute2":type2(component2), ..}'
     ///
     /// The attribute names should appear exactly how the attribute is named in the input mesh
     /// files.  On the output, the attribute names will be converted to SCREAMING_SNAKE case
@@ -88,32 +86,44 @@ struct Opt {
     /// in the output. There are no guarantees for collision resolution resulting from this
     /// conversion.
     ///
-    /// The associated types must have the format type<component> where 'type' is one of
+    /// The associated types must have the format type(component) where 'type' is one of
     ///
     ///     Scalar, Vec2, Vec3, Vec4, Mat2, Mat3, or Mat4
     ///
     /// and 'component' is one of
     ///
-    ///     i8, u8, i16, u16, u32, or f32
+    ///     I8, U8, I16, U16, U32, or F32
     ///
     /// which correspond to 'GL_BYTE', 'GL_UNSIGNED_BYTE', 'GL_SHORT', 'GL_UNSIGNED_SHORT',
     /// 'GL_UNSIGNED_INT' and 'GL_FLOAT' respectively.
     ///
-    /// Note that type and component names are not case sensitive.
+    /// Scalar types may be specified without the 'Scalar(..)', but with the component type
+    /// directly as 'attribute: F32' instead of 'attribute: Scalar(F32)'.
     ///
-    /// EXAMPLE
+    /// Note that type and component names may be specified in all lower case as well.
     ///
-    /// The following is a valid attribute list:
     ///
-    /// "temperature: Scalar<f32>" "force: Vec3<f32>" "material: Scalar<u32>"
+    /// LIMITATIONS
     ///
-    #[structopt(short, long)]
-    attributes: Vec<AttributeInfo>,
+    /// Component types are not converted from the input to the output, so it's important that
+    /// they are stored in the input files exactly in the types supported by glTF 2.0.
+    /// This means that double precision float attribute will not be transferred to a
+    /// single precision float attribute in glTF, but will simply be ignored.
+    ///
+    /// EXAMPLES
+    ///
+    /// The following is a valid attribute list demonstrating different ways to specify types and
+    /// component types:
+    ///
+    /// '{"temperature":F32, "force":Vec3(F32), "material":Scalar(u32)}'
+    ///
+    #[structopt(short, long, default_value = "{}")]
+    attributes: AttributeInfo,
 
-    /// A list of texture coordinate attributes and their types to transfer provided in a common
-    /// type ascription syntax:
+    /// A list of texture coordinate attributes and their types to transfer provided as a
+    /// dictionary:
     ///
-    /// "texcoord0: component_type1" "texcoord1: component_type2"
+    /// '{"texcoord0":component_type1, "texcoord1":component_type2, ..}'
     ///
     /// The texture coordinate attribute names should appear exactly how they are named in the
     /// input mesh files.  On the output, these names will be converted to TEXCOORD_# where #
@@ -122,20 +132,24 @@ struct Opt {
     ///
     /// The component type can be one of
     ///
-    ///     u8, u16, or f32
+    ///     U8, U16, or F32
     ///
     /// which correspond to 'GL_UNSIGNED_BYTE', 'GL_UNSIGNED_SHORT', and 'GL_FLOAT' respectively.
     ///
-    /// Note that component type names are not case sensitive.
+    /// Note that component type names may be specified in lower case as well.
     ///
-    /// EXAMPLE
+    /// LIMITATIONS
+    ///
+    /// See LIMITATIONS section for the '--attributes' flag.
+    ///
+    /// EXAMPLES
     ///
     /// The following is a valid texture coordinate attribute list:
     ///
-    /// "uv: f32" "bump: f32"
+    /// '{"uv": f32, "bump": F32}'
     ///
-    #[structopt(short = "uv", long)]
-    texcoords: Vec<TextureAttributeInfo>,
+    #[structopt(short = "u", long, default_value = "{}")]
+    texcoords: TextureAttributeInfo,
 
     /// Specify textures in Rusty Object Notation (RON) (https://github.com/ron-rs/ron) as a list
     /// of structs:
@@ -181,11 +195,15 @@ struct Opt {
     /// See the glTF 2.0 specifications for more details
     /// https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#texture-data
     ///
-    /// EXAMPLE
+    /// Note that all options may be specified in snake_case as well.
+    ///
+    ///
+    /// EXAMPLES
     ///
     /// The following is a valid texture list:
     ///
-    /// "(image: Uri(\"./texture.png\")) (image: Embed(\"./texture2.png\"), wrap_s: Repeat)"
+    /// '(image: Uri("./texture.png"))
+    ///  (image: Embed("./texture2.png"), wrap_s: Repeat wrap_t: mirrored_repeat)'
     ///
     #[structopt(short = "x", long)]
     textures: Vec<TextureInfo>,
@@ -194,12 +212,28 @@ struct Opt {
     /// as a list of structs:
     ///
     /// "(
-    ///     [name: String,]
-    ///     [base_color: [f32; 4],]
-    ///     [base_texture: (index: u32, texcoord: u32),]
-    ///     [metallic: f32,]
-    ///     [roughness: f32,]
+    ///     name: String,
+    ///     base_color: [f32; 4],                       // default: [0.5, 0.5, 0.5, 1.0]
+    ///     base_texture: (index: u32, texcoord: u32),  // default: (index: 0, texcoord: 0)
+    ///     metallic: f32,                              // default: 0.5
+    ///     roughness: f32,                             // default: 0.5
     /// ) .."
+    ///
+    /// where 'f32' indicates a single precision floating point value, and 'u32' a 32 bit unsigned
+    /// integer. All fields are optional. The type '[f32; 4]' is an array of 4 floats corresponding
+    /// to red, green, blue and alpha values between 0.0 and 1.0. 'metallic' and 'roughness'
+    /// factors are expected to be between 0.0 and 1.0.
+    ///
+    ///
+    /// EXAMPLES
+    ///
+    /// The following are examples of valid material specifications:
+    ///
+    /// "()"
+    /// produces a default material.
+    ///
+    /// '(name: "material0", base_color: [0.1, 0.2, 0.3, 1.0], metallic: 0.0)'
+    /// produces a material named "material0" with the specified base_color and metallic factor.
     ///
     #[structopt(short, long)]
     materials: Vec<MaterialInfo>,
@@ -245,13 +279,7 @@ impl fmt::Display for Error {
 }
 
 fn main() -> Result<(), Error> {
-    let mut opt = Opt::from_args();
-
-    // Correct texture coordinate attribute ids.
-    opt.texcoords
-        .iter_mut()
-        .enumerate()
-        .for_each(|(i, tex_attrib_info)| tex_attrib_info.id = i as u32);
+    let opt = Opt::from_args();
 
     let pattern = if opt.pattern.starts_with("./") {
         &opt.pattern[2..]
@@ -286,7 +314,7 @@ fn main() -> Result<(), Error> {
     let mut mesh_meta: Vec<_> = entries
         .into_iter()
         .filter_map(|entry| {
-            entry.ok().map(|path| {
+            entry.ok().and_then(|path| {
                 let path_str = path.to_string_lossy();
                 let caps = match regex.captures(&path_str) {
                     Some(caps) => caps,
@@ -297,7 +325,7 @@ fn main() -> Result<(), Error> {
                             regex.as_str(),
                         );
                         return None;
-                    },
+                    }
                 };
                 let frame_cap = caps.name("frame");
                 let frame = frame_cap
@@ -319,7 +347,7 @@ fn main() -> Result<(), Error> {
                         name.push_str(cap.as_str());
                     }
                 }
-                (name, frame, path)
+                Some((name, frame, path))
             })
         })
         .collect();
@@ -390,10 +418,10 @@ fn main() -> Result<(), Error> {
     if !opt.quiet {
         pb.write().unwrap().finish();
     }
-    let dt = if let Some(fps) = opt.fps {
-        1.0 / fps as f32
+    let dt = if let Some(dt) = opt.time_step {
+        dt
     } else {
-        opt.time_step
+        1.0 / opt.fps as f32
     };
 
     if !opt.quiet {

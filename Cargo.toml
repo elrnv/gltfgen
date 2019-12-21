@@ -1,6 +1,6 @@
 [package]
 name = "gltfgen"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 edition = "2018"
 
@@ -13,7 +13,6 @@ license = "MPL-2.0"
 keywords = ["glTF", "VTK", "3D", "asset", "generator"]
 
 [dependencies]
-#gltf = { git = "https://github.com/elrnv/gltf" }
 gltf = { version = "0.14", features = ["extras"] }
 structopt = "0.3"
 regex = "1"
@@ -25,7 +24,5 @@ rayon = "1"
 syn = "1" # For parsing attributes
 heck = "0.3" # For converting case
 ron = "0.5"
-serde = "1.0"
-
-[features]
-empty-sparse-base-buffer-view = []
+serde = "1"
+indexmap = { version = "1", features = ["serde-1"] }

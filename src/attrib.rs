@@ -1,29 +1,36 @@
 use gltf::json;
 use gut::mesh::topology::{FaceIndex, FaceVertexIndex, VertexIndex};
 use gut::mesh::TriMesh;
+use indexmap::map::IndexMap;
+use serde::Deserialize;
 
 pub(crate) type VertexAttribute = gut::mesh::attrib::Attribute<VertexIndex>;
 pub(crate) type FaceVertexAttribute = gut::mesh::attrib::Attribute<FaceVertexIndex>;
 
-pub(crate) type TexAttribDict = Vec<(TextureAttributeInfo, FaceVertexAttribute)>;
-pub(crate) type AttribDict = Vec<(AttributeInfo, VertexAttribute)>;
-pub(crate) type AttribTransfer = (AttribDict, TexAttribDict, /*material id*/ u32);
+pub(crate) type AttribTransfer = (
+    Vec<Attribute>,
+    Vec<TextureAttribute>,
+    /*material id*/ u32,
+);
 
 /// Cleanup unwanted attributes.
 pub(crate) fn clean_attributes(
     mesh: &mut TriMesh<f32>,
-    attributes: &[AttributeInfo],
-    tex_attributes: &[TextureAttributeInfo],
+    attributes: &AttributeInfo,
+    tex_attributes: &TextureAttributeInfo,
     material_attribute: &String,
 ) -> AttribTransfer {
     // First we remove all attributes we want to keep.
     let attribs_to_keep: Vec<_> = attributes
+        .0
         .iter()
         .filter_map(|attrib| remove_attribute(mesh, attrib))
         .collect();
     let tex_attribs_to_keep: Vec<_> = tex_attributes
+        .0
         .iter()
-        .filter_map(|attrib| remove_texture_coordinate_attribute(mesh, attrib))
+        .enumerate()
+        .filter_map(|(id, attrib)| remove_texture_coordinate_attribute(mesh, attrib, id))
         .collect();
 
     // Compute the material index for this mesh.
@@ -46,88 +53,101 @@ pub(crate) fn clean_attributes(
 }
 
 /// Remove the given attribute from the mesh and return it along with its name.
-fn remove_attribute(
-    mesh: &mut TriMesh<f32>,
-    attrib: &AttributeInfo,
-) -> Option<(AttributeInfo, VertexAttribute)> {
+fn remove_attribute(mesh: &mut TriMesh<f32>, attrib: (&String, &Type)) -> Option<Attribute> {
     use gut::mesh::attrib::Attrib;
-    mesh.remove_attrib::<VertexIndex>(&attrib.name)
+    mesh.remove_attrib::<VertexIndex>(&attrib.0)
         .ok()
-        .map(|a| (attrib.clone(), a))
+        .map(|a| Attribute {
+            name: attrib.0.clone(),
+            type_: *attrib.1,
+            attribute: a,
+        })
 }
 
 fn remove_texture_coordinate_attribute(
     mesh: &mut TriMesh<f32>,
-    attrib: &TextureAttributeInfo,
-) -> Option<(TextureAttributeInfo, FaceVertexAttribute)> {
+    attrib: (&String, &ComponentType),
+    id: usize,
+) -> Option<TextureAttribute> {
     use gut::mesh::attrib::Attrib;
-    mesh.remove_attrib::<FaceVertexIndex>(&attrib.name)
+    mesh.remove_attrib::<FaceVertexIndex>(&attrib.0)
         .ok()
-        .map(|a| (attrib.clone(), a))
+        .map(|a| TextureAttribute {
+            id: id as u32,
+            name: attrib.0.clone(),
+            component_type: *attrib.1,
+            attribute: a,
+        })
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct TextureAttribute {
+    pub id: u32,
+    pub name: String,
+    pub component_type: ComponentType,
+    pub attribute: FaceVertexAttribute,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Attribute {
+    pub name: String,
+    pub type_: Type,
+    pub attribute: VertexAttribute,
 }
 
 #[macro_export]
 macro_rules! call_typed_fn {
-    ($attrib:expr => $prefix:ident :: $fn:ident :: <_$(,$params:ident)*> $args:tt ) => {
+    ($type:expr => $prefix:ident :: $fn:ident :: <_$(,$params:ident)*> $args:tt ) => {
         {
-            use json::accessor::{Type, ComponentType};
-            match $attrib.type_ {
-                Type::Scalar => match $attrib.component_type {
-                    ComponentType::I8 =>  $prefix :: $fn::<i8 $(,$params)*> $args,
-                    ComponentType::U8 =>  $prefix :: $fn::<u8 $(,$params)*> $args,
-                    ComponentType::I16 => $prefix :: $fn::<i16 $(,$params)*>$args,
-                    ComponentType::U16 => $prefix :: $fn::<u16 $(,$params)*>$args,
-                    ComponentType::U32 => $prefix :: $fn::<u32 $(,$params)*>$args,
-                    ComponentType::F32 => $prefix :: $fn::<f32 $(,$params)*>$args,
-                },
-                Type::Vec2 => match $attrib.component_type {
-                    ComponentType::I8 =>  $prefix :: $fn::<[i8 ; 2] $(,$params)*>$args,
-                    ComponentType::U8 =>  $prefix :: $fn::<[u8 ; 2] $(,$params)*>$args,
-                    ComponentType::I16 => $prefix :: $fn::<[i16; 2] $(,$params)*>$args,
-                    ComponentType::U16 => $prefix :: $fn::<[u16; 2] $(,$params)*>$args,
-                    ComponentType::U32 => $prefix :: $fn::<[u32; 2] $(,$params)*>$args,
-                    ComponentType::F32 => $prefix :: $fn::<[f32; 2] $(,$params)*>$args,
-                },
-                Type::Vec3 => match $attrib.component_type {
-                    ComponentType::I8 =>  $prefix :: $fn::<[i8 ; 3] $(,$params)*>$args,
-                    ComponentType::U8 =>  $prefix :: $fn::<[u8 ; 3] $(,$params)*>$args,
-                    ComponentType::I16 => $prefix :: $fn::<[i16; 3] $(,$params)*>$args,
-                    ComponentType::U16 => $prefix :: $fn::<[u16; 3] $(,$params)*>$args,
-                    ComponentType::U32 => $prefix :: $fn::<[u32; 3] $(,$params)*>$args,
-                    ComponentType::F32 => $prefix :: $fn::<[f32; 3] $(,$params)*>$args,
-                },
-                Type::Vec4 => match $attrib.component_type {
-                    ComponentType::I8 =>  $prefix :: $fn::<[i8 ; 4] $(,$params)*>$args,
-                    ComponentType::U8 =>  $prefix :: $fn::<[u8 ; 4] $(,$params)*>$args,
-                    ComponentType::I16 => $prefix :: $fn::<[i16; 4] $(,$params)*>$args,
-                    ComponentType::U16 => $prefix :: $fn::<[u16; 4] $(,$params)*>$args,
-                    ComponentType::U32 => $prefix :: $fn::<[u32; 4] $(,$params)*>$args,
-                    ComponentType::F32 => $prefix :: $fn::<[f32; 4] $(,$params)*>$args,
-                },
-                Type::Mat2 => match $attrib.component_type {
-                    ComponentType::I8 =>  $prefix :: $fn::<[[i8 ; 2]; 2] $(,$params)*>$args,
-                    ComponentType::U8 =>  $prefix :: $fn::<[[u8 ; 2]; 2] $(,$params)*>$args,
-                    ComponentType::I16 => $prefix :: $fn::<[[i16; 2]; 2] $(,$params)*>$args,
-                    ComponentType::U16 => $prefix :: $fn::<[[u16; 2]; 2] $(,$params)*>$args,
-                    ComponentType::U32 => $prefix :: $fn::<[[u32; 2]; 2] $(,$params)*>$args,
-                    ComponentType::F32 => $prefix :: $fn::<[[f32; 2]; 2] $(,$params)*>$args,
-                },
-                Type::Mat3 => match $attrib.component_type {
-                    ComponentType::I8 =>  $prefix :: $fn::<[[i8 ; 3]; 3] $(,$params)*>$args,
-                    ComponentType::U8 =>  $prefix :: $fn::<[[u8 ; 3]; 3] $(,$params)*>$args,
-                    ComponentType::I16 => $prefix :: $fn::<[[i16; 3]; 3] $(,$params)*>$args,
-                    ComponentType::U16 => $prefix :: $fn::<[[u16; 3]; 3] $(,$params)*>$args,
-                    ComponentType::U32 => $prefix :: $fn::<[[u32; 3]; 3] $(,$params)*>$args,
-                    ComponentType::F32 => $prefix :: $fn::<[[f32; 3]; 3] $(,$params)*>$args,
-                },
-                Type::Mat4 => match $attrib.component_type {
-                    ComponentType::I8 =>  $prefix :: $fn::<[[i8 ; 4]; 4] $(,$params)*>$args,
-                    ComponentType::U8 =>  $prefix :: $fn::<[[u8 ; 4]; 4] $(,$params)*>$args,
-                    ComponentType::I16 => $prefix :: $fn::<[[i16; 4]; 4] $(,$params)*>$args,
-                    ComponentType::U16 => $prefix :: $fn::<[[u16; 4]; 4] $(,$params)*>$args,
-                    ComponentType::U32 => $prefix :: $fn::<[[u32; 4]; 4] $(,$params)*>$args,
-                    ComponentType::F32 => $prefix :: $fn::<[[f32; 4]; 4] $(,$params)*>$args,
-                },
+            match $type {
+                Type::Scalar(ComponentType::I8)  | Type::I8 =>  $prefix :: $fn::<i8 $(,$params)*> $args,
+                Type::Scalar(ComponentType::U8)  | Type::U8 =>  $prefix :: $fn::<u8 $(,$params)*> $args,
+                Type::Scalar(ComponentType::I16) | Type::I16 => $prefix :: $fn::<i16 $(,$params)*>$args,
+                Type::Scalar(ComponentType::U16) | Type::U16 => $prefix :: $fn::<u16 $(,$params)*>$args,
+                Type::Scalar(ComponentType::U32) | Type::U32 => $prefix :: $fn::<u32 $(,$params)*>$args,
+                Type::Scalar(ComponentType::F32) | Type::F32 => $prefix :: $fn::<f32 $(,$params)*>$args,
+
+                Type::Vec2(ComponentType::I8 ) => $prefix :: $fn::<[i8 ; 2] $(,$params)*>$args,
+                Type::Vec2(ComponentType::U8 ) => $prefix :: $fn::<[u8 ; 2] $(,$params)*>$args,
+                Type::Vec2(ComponentType::I16) => $prefix :: $fn::<[i16; 2] $(,$params)*>$args,
+                Type::Vec2(ComponentType::U16) => $prefix :: $fn::<[u16; 2] $(,$params)*>$args,
+                Type::Vec2(ComponentType::U32) => $prefix :: $fn::<[u32; 2] $(,$params)*>$args,
+                Type::Vec2(ComponentType::F32) => $prefix :: $fn::<[f32; 2] $(,$params)*>$args,
+
+                Type::Vec3(ComponentType::I8 ) => $prefix :: $fn::<[i8 ; 3] $(,$params)*>$args,
+                Type::Vec3(ComponentType::U8 ) => $prefix :: $fn::<[u8 ; 3] $(,$params)*>$args,
+                Type::Vec3(ComponentType::I16) => $prefix :: $fn::<[i16; 3] $(,$params)*>$args,
+                Type::Vec3(ComponentType::U16) => $prefix :: $fn::<[u16; 3] $(,$params)*>$args,
+                Type::Vec3(ComponentType::U32) => $prefix :: $fn::<[u32; 3] $(,$params)*>$args,
+                Type::Vec3(ComponentType::F32) => $prefix :: $fn::<[f32; 3] $(,$params)*>$args,
+
+                Type::Vec4(ComponentType::I8 ) => $prefix :: $fn::<[i8 ; 4] $(,$params)*>$args,
+                Type::Vec4(ComponentType::U8 ) => $prefix :: $fn::<[u8 ; 4] $(,$params)*>$args,
+                Type::Vec4(ComponentType::I16) => $prefix :: $fn::<[i16; 4] $(,$params)*>$args,
+                Type::Vec4(ComponentType::U16) => $prefix :: $fn::<[u16; 4] $(,$params)*>$args,
+                Type::Vec4(ComponentType::U32) => $prefix :: $fn::<[u32; 4] $(,$params)*>$args,
+                Type::Vec4(ComponentType::F32) => $prefix :: $fn::<[f32; 4] $(,$params)*>$args,
+
+                Type::Mat2(ComponentType::I8 ) =>  $prefix :: $fn::<[[i8 ; 2]; 2] $(,$params)*>$args,
+                Type::Mat2(ComponentType::U8 ) =>  $prefix :: $fn::<[[u8 ; 2]; 2] $(,$params)*>$args,
+                Type::Mat2(ComponentType::I16) => $prefix :: $fn::<[[i16; 2]; 2] $(,$params)*>$args,
+                Type::Mat2(ComponentType::U16) => $prefix :: $fn::<[[u16; 2]; 2] $(,$params)*>$args,
+                Type::Mat2(ComponentType::U32) => $prefix :: $fn::<[[u32; 2]; 2] $(,$params)*>$args,
+                Type::Mat2(ComponentType::F32) => $prefix :: $fn::<[[f32; 2]; 2] $(,$params)*>$args,
+
+                Type::Mat3(ComponentType::I8 ) => $prefix :: $fn::<[[i8 ; 3]; 3] $(,$params)*>$args,
+                Type::Mat3(ComponentType::U8 ) => $prefix :: $fn::<[[u8 ; 3]; 3] $(,$params)*>$args,
+                Type::Mat3(ComponentType::I16) => $prefix :: $fn::<[[i16; 3]; 3] $(,$params)*>$args,
+                Type::Mat3(ComponentType::U16) => $prefix :: $fn::<[[u16; 3]; 3] $(,$params)*>$args,
+                Type::Mat3(ComponentType::U32) => $prefix :: $fn::<[[u32; 3]; 3] $(,$params)*>$args,
+                Type::Mat3(ComponentType::F32) => $prefix :: $fn::<[[f32; 3]; 3] $(,$params)*>$args,
+
+                Type::Mat4(ComponentType::I8 ) => $prefix :: $fn::<[[i8 ; 4]; 4] $(,$params)*>$args,
+                Type::Mat4(ComponentType::U8 ) => $prefix :: $fn::<[[u8 ; 4]; 4] $(,$params)*>$args,
+                Type::Mat4(ComponentType::I16) => $prefix :: $fn::<[[i16; 4]; 4] $(,$params)*>$args,
+                Type::Mat4(ComponentType::U16) => $prefix :: $fn::<[[u16; 4]; 4] $(,$params)*>$args,
+                Type::Mat4(ComponentType::U32) => $prefix :: $fn::<[[u32; 4]; 4] $(,$params)*>$args,
+                Type::Mat4(ComponentType::F32) => $prefix :: $fn::<[[f32; 4]; 4] $(,$params)*>$args,
             }
         }
     };
@@ -137,190 +157,143 @@ macro_rules! call_typed_fn {
  * Parsing attributes from command line
  */
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TextureAttributeInfo {
-    pub id: u32,
-    pub name: String,
-    pub component_type: json::accessor::ComponentType,
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+pub(crate) enum ComponentType {
+    /// Signed 8-bit integer. Corresponds to `GL_BYTE`.
+    #[serde(alias = "i8")]
+    I8,
+    /// Unsigned 8-bit integer. Corresponds to `GL_UNSIGNED_BYTE`.
+    #[serde(alias = "u8")]
+    U8,
+    /// Signed 16-bit integer. Corresponds to `GL_SHORT`.
+    #[serde(alias = "i16")]
+    I16,
+    /// Unsigned 16-bit integer. Corresponds to `GL_UNSIGNED_SHORT`.
+    #[serde(alias = "u16")]
+    U16,
+    /// Unsigned 32-bit integer. Corresponds to `GL_UNSIGNED_INT`.
+    #[serde(alias = "u32")]
+    U32,
+    /// Single precision (32-bit) floating point number. Corresponds to `GL_FLOAT`.
+    #[serde(alias = "f32")]
+    F32,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct AttributeInfo {
-    pub name: String,
-    pub type_: json::accessor::Type,
-    pub component_type: json::accessor::ComponentType,
-}
-
-fn parse_type(ty: &syn::Ident) -> Result<json::accessor::Type, syn::Error> {
-    use json::accessor::Type;
-    match ty.to_string().to_lowercase().as_str() {
-        "scalar" => Ok(Type::Scalar),
-        "vec2" => Ok(Type::Vec2),
-        "vec3" => Ok(Type::Vec3),
-        "vec4" => Ok(Type::Vec4),
-        "mat2" => Ok(Type::Mat2),
-        "mat3" => Ok(Type::Mat3),
-        "mat4" => Ok(Type::Mat4),
-        _ => Err(syn::Error::new(
-            ty.span(),
-            format!("invalid type: \"{}\". please choose one of Scalar, Vec2, Vec3, Vec4, Mat2, Mat3, or Mat4", ty),
-        )),
+impl Into<json::accessor::ComponentType> for ComponentType {
+    fn into(self) -> json::accessor::ComponentType {
+        match self {
+            ComponentType::I8 => json::accessor::ComponentType::I8,
+            ComponentType::U8 => json::accessor::ComponentType::U8,
+            ComponentType::I16 => json::accessor::ComponentType::I16,
+            ComponentType::U16 => json::accessor::ComponentType::U16,
+            ComponentType::U32 => json::accessor::ComponentType::U32,
+            ComponentType::F32 => json::accessor::ComponentType::F32,
+        }
     }
 }
 
-fn parse_component_type(ty: &syn::Ident) -> Result<json::accessor::ComponentType, syn::Error> {
-    use json::accessor::ComponentType;
-    match ty.to_string().to_lowercase().as_str() {
-        "i8" => Ok(ComponentType::I8),
-        "u8" => Ok(ComponentType::U8),
-        "i16" => Ok(ComponentType::I16),
-        "u16" => Ok(ComponentType::U16),
-        "u32" => Ok(ComponentType::U32),
-        "f32" => Ok(ComponentType::F32),
-        _ => Err(syn::Error::new(
-            ty.span(),
-            format!(
-                "invalid component type: \"{}\". Please choose one of i8, u8, i16, u16, u32 or f32",
-                ty
-            ),
-        )),
+#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+pub(crate) enum Type {
+    /// Signed 8-bit integer. Corresponds to `GL_BYTE`.
+    #[serde(alias = "i8")]
+    I8,
+    /// Unsigned 8-bit integer. Corresponds to `GL_UNSIGNED_BYTE`.
+    #[serde(alias = "u8")]
+    U8,
+    /// Signed 16-bit integer. Corresponds to `GL_SHORT`.
+    #[serde(alias = "i16")]
+    I16,
+    /// Unsigned 16-bit integer. Corresponds to `GL_UNSIGNED_SHORT`.
+    #[serde(alias = "u16")]
+    U16,
+    /// Unsigned 32-bit integer. Corresponds to `GL_UNSIGNED_INT`.
+    #[serde(alias = "u32")]
+    U32,
+    /// Single precision (32-bit) floating point number. Corresponds to `GL_FLOAT`.
+    #[serde(alias = "f32")]
+    F32,
+    /// Scalar quantity.
+    #[serde(alias = "scalar")]
+    Scalar(ComponentType),
+    /// 2D vector.
+    #[serde(alias = "vec2")]
+    Vec2(ComponentType),
+    /// 3D vector.
+    #[serde(alias = "vec3")]
+    Vec3(ComponentType),
+    /// 4D vector.
+    #[serde(alias = "vec4")]
+    Vec4(ComponentType),
+    /// 2x2 matrix.
+    #[serde(alias = "mat2")]
+    Mat2(ComponentType),
+    /// 3x3 matrix.
+    #[serde(alias = "mat3")]
+    Mat3(ComponentType),
+    /// 4x4 matrix.
+    #[serde(alias = "mat4")]
+    Mat4(ComponentType),
+}
+
+impl Into<(json::accessor::Type, json::accessor::ComponentType)> for Type {
+    fn into(self) -> (json::accessor::Type, json::accessor::ComponentType) {
+        let type_ = match self {
+            Type::I8
+            | Type::U8
+            | Type::I16
+            | Type::U16
+            | Type::U32
+            | Type::F32
+            | Type::Scalar(_) => json::accessor::Type::Scalar,
+            Type::Vec2(_) => json::accessor::Type::Vec2,
+            Type::Vec3(_) => json::accessor::Type::Vec3,
+            Type::Vec4(_) => json::accessor::Type::Vec4,
+            Type::Mat2(_) => json::accessor::Type::Mat2,
+            Type::Mat3(_) => json::accessor::Type::Mat3,
+            Type::Mat4(_) => json::accessor::Type::Mat4,
+        };
+
+        let component_type = match self {
+            Type::I8 => json::accessor::ComponentType::I8,
+            Type::U8 => json::accessor::ComponentType::U8,
+            Type::I16 => json::accessor::ComponentType::I16,
+            Type::U16 => json::accessor::ComponentType::U16,
+            Type::U32 => json::accessor::ComponentType::U32,
+            Type::F32 => json::accessor::ComponentType::F32,
+            Type::Scalar(c)
+            | Type::Vec2(c)
+            | Type::Vec3(c)
+            | Type::Vec4(c)
+            | Type::Mat2(c)
+            | Type::Mat3(c)
+            | Type::Mat4(c) => c.into(),
+        };
+
+        (type_, component_type)
     }
 }
+
+// Note that indexmap is essential here since we want to preserve the order of the texture
+// coordinate attributes since we are using it explicitly in the gltf output.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub(crate) struct TextureAttributeInfo(pub IndexMap<String, ComponentType>);
+
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub(crate) struct AttributeInfo(pub IndexMap<String, Type>);
 
 impl std::str::FromStr for AttributeInfo {
-    type Err = syn::Error;
+    type Err = ron::de::Error;
     fn from_str(input: &str) -> Result<AttributeInfo, Self::Err> {
-        // Use syn to parse a type pattern and deconstruct it into something we can recognize.
-        // NOTE: using syn is obviously overkill, but it is already available through dependencies,
-        //       so it avoids an additional external dependency or writing a custom parser.
-        syn::parse_str::<syn::ExprType>(input).and_then(|expr_type| {
-            if let syn::Expr::Path(path) = *expr_type.expr {
-                if let Some(name) = path.path.get_ident().map(|x| x.to_string()) {
-                    if let syn::Type::Path(syn::TypePath { path, .. }) = *expr_type.ty {
-                        if path.segments.len() != 1 {
-                            return Err(syn::Error::new_spanned(
-                                path,
-                                "invalid format for attribute type",
-                            ));
-                        }
-
-                        // We know we have exactly one path segment.
-                        let ty = path.segments.first().unwrap();
-
-                        // Try to first parse the type as a component type in case the user
-                        // specifies the attribute as "attribute: f32". This is unambiguous so we
-                        // accept it.
-                        if let Ok(component_type) = parse_component_type(&ty.ident) {
-                            return Ok(AttributeInfo {
-                                name,
-                                type_: json::accessor::Type::Scalar,
-                                component_type,
-                            });
-                        }
-                        parse_type(&ty.ident).and_then(|type_| {
-                            if let syn::PathArguments::AngleBracketed(args) = &ty.arguments {
-                                if args.args.len() != 1 {
-                                    return Err(syn::Error::new_spanned(
-                                        args,
-                                        "invalid format for component type",
-                                    ));
-                                }
-
-                                // We know there is exactly one component type arg.
-                                if let syn::GenericArgument::Type(syn::Type::Path(
-                                    syn::TypePath {
-                                        path: component_type,
-                                        ..
-                                    },
-                                )) = args.args.first().unwrap()
-                                {
-                                    component_type
-                                        .get_ident()
-                                        .ok_or_else(|| {
-                                            syn::Error::new_spanned(
-                                                component_type,
-                                                "invalid format for component type",
-                                            )
-                                        })
-                                        .and_then(|component_type| {
-                                            parse_component_type(component_type).map(
-                                                |component_type| AttributeInfo {
-                                                    name,
-                                                    type_,
-                                                    component_type,
-                                                },
-                                            )
-                                        })
-                                } else {
-                                    Err(syn::Error::new_spanned(
-                                        ty,
-                                        "invalid format for component type",
-                                    ))
-                                }
-                            } else {
-                                Err(syn::Error::new_spanned(
-                                    ty,
-                                    "invalid format for component type",
-                                ))
-                            }
-                        })
-                    } else {
-                        Err(syn::Error::new_spanned(
-                            expr_type.ty,
-                            "invalid format for type",
-                        ))
-                    }
-                } else {
-                    Err(syn::Error::new_spanned(path, "invalid attribute name"))
-                }
-            } else {
-                Err(syn::Error::new_spanned(expr_type, "invalid format"))
-            }
-        })
+        let idx_map: Result<IndexMap<String, Type>, Self::Err> = ron::de::from_str(input);
+        idx_map.map(|m| AttributeInfo(m))
     }
 }
 
 impl std::str::FromStr for TextureAttributeInfo {
-    type Err = syn::Error;
+    type Err = ron::de::Error;
     fn from_str(input: &str) -> Result<TextureAttributeInfo, Self::Err> {
-        // Use syn to parse a type pattern and deconstruct it into something we can recognize.
-        // NOTE: using syn is obviously overkill, but it is already available through dependencies,
-        //       so it avoids an additional external dependency or writing a custom parser.
-        syn::parse_str::<syn::ExprType>(input).and_then(|expr_type| {
-            if let syn::Expr::Path(path) = *expr_type.expr {
-                if let Some(name) = path.path.get_ident().map(|x| x.to_string()) {
-                    if let syn::Type::Path(syn::TypePath { path, .. }) = *expr_type.ty {
-                        if path.segments.len() != 1 {
-                            return Err(syn::Error::new_spanned(
-                                path,
-                                "invalid format for texture coordinate attribute type",
-                            ));
-                        }
-
-                        // We know we have exactly one path segment.
-                        let ty = path.segments.first().unwrap();
-
-                        parse_component_type(&ty.ident).map(|component_type| TextureAttributeInfo {
-                            id: 0,
-                            name,
-                            component_type,
-                        })
-                    } else {
-                        Err(syn::Error::new_spanned(
-                            expr_type.ty,
-                            "invalid format for component type",
-                        ))
-                    }
-                } else {
-                    Err(syn::Error::new_spanned(
-                        path,
-                        "invalid texture coordinate attribute name",
-                    ))
-                }
-            } else {
-                Err(syn::Error::new_spanned(expr_type, "invalid format"))
-            }
-        })
+        let idx_map: Result<IndexMap<String, ComponentType>, Self::Err> = ron::de::from_str(input);
+        idx_map.map(|m| TextureAttributeInfo(m))
     }
 }
 
