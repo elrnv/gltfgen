@@ -1,6 +1,6 @@
 # `gltfgen`
 
-A command line time to generate glTF 2.0 animations from a numbered sequence of mesh files.
+A command line tool for generating glTF 2.0 animations from numbered sequences of mesh files.
 
 
 # Examples
@@ -22,7 +22,7 @@ Alternatively, you may produce the same result by specifying the number of frame
 
 # Usage
 
-`> gltfgen [OPTIONS] <output> <pattern>`
+`> gltfgen [FLAGS] [OPTIONS] <output> <pattern>`
 
   - `<output>`     Output glTF file
 
@@ -33,13 +33,29 @@ Run `gltfgen -h` to get more details.
 
 # Features
 
-Input types:
+## Input Types
+
  - Unstructured Legacy VTK polygon and tetrahedral meshes in double or float format.
    Tetrahedral VTK meshes are converted to triangle meshes on the fly.
+ - JPEG and PNG image textures are supported.
 
-Output types:
- - glTF 2.0 in binary format.
+## Output Types
 
+ - glTF 2.0 in binary and standard formats.
+
+## Other Features
+
+ - Multiple mesh file sequences can be embedded into a single glTF file
+   automatically.
+ - Non-numbered mesh files will be placed at frame 0 if captured by the glob
+   pattern.
+ - Skip frames with `-s` flag to reduce file size and improve performance.
+ - Images textures can be referenced or embedded directly into the glTF file.
+ - Full support for transferring vertex attributes.
+ - Full support for texture coordinate attributes.
+ - Full support for textures.
+ - Material attribute on vtk primitives is used to reference specific materials
+   provided on the command line.
 
 # License
 

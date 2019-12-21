@@ -4,7 +4,7 @@ version = "0.4.0"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 edition = "2018"
 
-description = "glTF 2.0 scene generator from mesh sequences"
+description = "Command line tool for generating glTF 2.0 animations from numbered sequences of mesh files."
 documentation = "https://docs.rs/gltfgen"
 repository = "https://github.com/elrnv/gltfgen"
 homepage = "https://github.com/elrnv/gltfgen"
@@ -26,3 +26,4 @@ heck = "0.3" # For converting case
 ron = "0.5"
 serde = "1"
 indexmap = { version = "1", features = ["serde-1"] }
+terminal_size = "0.1"

@@ -1,3 +1,7 @@
+//!
+//! gltfgen is a command line tool for generating gltf files in standard and
+//! binary formats from a given sequence of mesh files.
+//!
 #[macro_use]
 mod attrib;
 mod export;
@@ -20,34 +24,37 @@ use gut::mesh::TriMesh;
 use rayon::prelude::*;
 
 #[derive(StructOpt, Debug)]
-#[structopt(name = "gltfgen")]
+#[structopt(about, name = "gltfgen")]
 struct Opt {
     /// Output glTF file
     #[structopt(parse(from_os_str))]
     output: PathBuf,
-
-    /// A glob pattern matching files to be included in the generated glTF document.
+    /// A glob pattern matching files to be included in the generated glTF
+    /// document.
     ///
-    /// Use # to match a frame number. If more than one '#' is used, the first match will
-    /// correspond to the frame number. Note that the glob pattern should generally by provided
-    /// as a quoted string to prevent the terminal from evaluating it.
+    /// Use # to match a frame number. If more than one '#' is used, the first
+    /// match will correspond to the frame number. Note that the glob pattern
+    /// should generally by provided as a quoted string to prevent the terminal
+    /// from evaluating it.
     ///
-    /// Strings within between braces (i.e. '{' and '}') will be used as names for unique
-    /// animations.
-    /// This means that a single output can contain multiple animations. If more than one group is
-    /// specified, the matched strings within will be concatenated to produce a unique name.
-    /// Note that for the time being, '{' '}' are ignored when the glob pattern is matched.
+    /// Strings within between braces (i.e. '{' and '}') will be used as names
+    /// for unique animations.  This means that a single output can contain
+    /// multiple animations. If more than one group is specified, the matched
+    /// strings within will be concatenated to produce a unique name.  Note that
+    /// for the time being, '{' '}' are ignored when the glob pattern is
+    /// matched.
     #[structopt(parse(from_str))]
     pattern: String,
 
-    /// Frames per second. 1/fps gives the time step between discrete frames. If 'time_step' is
-    /// also provided, this parameter is ignored.
+    /// Frames per second. 1/fps gives the time step between discrete frames. If
+    /// 'time_step' is also provided, this parameter is ignored.
     #[structopt(short, long, default_value = "24")]
     fps: usize,
 
-    /// Time step in seconds between discrete frames. Specifying this option overrides the time
-    /// step that would be computed from 'fps', which is set to 24 by default.
-    /// This means that the default 'time_step' is equivalently 1/24.
+    /// Time step in seconds between discrete frames. Specifying this option
+    /// overrides the time step that would be computed from 'fps', which is set
+    /// to 24 by default.  This means that the default 'time_step' is
+    /// equivalently 1/24.
     #[structopt(short, long)]
     time_step: Option<f32>,
 
@@ -65,76 +72,77 @@ struct Opt {
 
     /// Step by this number of frames.
     ///
-    /// In other words, read frames in increments of 'step'.
-    /// Note that this does not affect the value for 'fps' or 'time_step' options.
-    /// This number must be at least 1.
+    /// In other words, read frames in increments of 'step'.  Note that this
+    /// does not affect the value for 'fps' or 'time_step' options.  This number
+    /// must be at least 1.
     ///
-    /// For example for frames 1 to 10, a 'step' value of 3 will read frames 1, 4, 7, and 10.
+    /// For example for frames 1 to 10, a 'step' value of 3 will read frames 1,
+    /// 4, 7, and 10.
     ///
     #[structopt(short, long, default_value = "1")]
     step: usize,
 
-    /// A list of custom vertex attributes and their types to transfer provided as a dictionary:
+    /// A list of custom vertex attributes and their types to transfer provided
+    /// as a dictionary:
     ///
     /// '{"attribute1":type1(component1), "attribute2":type2(component2), ..}'
     ///
-    /// The attribute names should appear exactly how the attribute is named in the input mesh
-    /// files.  On the output, the attribute names will be converted to SCREAMING_SNAKE case
-    /// prefixed with an underscore as required by the glTF 2.0 specifications.
+    /// The attribute names should appear exactly how the attribute is named in
+    /// the input mesh files.  On the output, the attribute names will be
+    /// converted to SCREAMING_SNAKE case prefixed with an underscore as
+    /// required by the glTF 2.0 specifications.
     ///
-    /// For example an attribute named "temperatureKelvin" will be stored as "_TEMPERATURE_KELVIN"
-    /// in the output. There are no guarantees for collision resolution resulting from this
-    /// conversion.
+    /// For example an attribute named "temperatureKelvin" will be stored as
+    /// "_TEMPERATURE_KELVIN" in the output. There are no guarantees for
+    /// collision resolution resulting from this conversion.
     ///
-    /// The associated types must have the format type(component) where 'type' is one of
+    /// The associated types must have the format type(component) where 'type'
+    /// is one of [Scalar, Vec2, Vec3, Vec4, Mat2, Mat3, or Mat4].
     ///
-    ///     Scalar, Vec2, Vec3, Vec4, Mat2, Mat3, or Mat4
+    /// and 'component' is one of [I8, U8, I16, U16, U32, F32].
     ///
-    /// and 'component' is one of
+    /// which correspond to 'GL_BYTE', 'GL_UNSIGNED_BYTE', 'GL_SHORT',
+    /// 'GL_UNSIGNED_SHORT', 'GL_UNSIGNED_INT' and 'GL_FLOAT' respectively.
     ///
-    ///     I8, U8, I16, U16, U32, or F32
+    /// Scalar types may be specified without the 'Scalar(..)', but with the
+    /// component type directly as 'attribute: F32' instead of 'attribute:
+    /// Scalar(F32)'.
     ///
-    /// which correspond to 'GL_BYTE', 'GL_UNSIGNED_BYTE', 'GL_SHORT', 'GL_UNSIGNED_SHORT',
-    /// 'GL_UNSIGNED_INT' and 'GL_FLOAT' respectively.
-    ///
-    /// Scalar types may be specified without the 'Scalar(..)', but with the component type
-    /// directly as 'attribute: F32' instead of 'attribute: Scalar(F32)'.
-    ///
-    /// Note that type and component names may be specified in all lower case as well.
-    ///
+    /// Note that type and component names may be specified in all lower case as
+    /// well.
     ///
     /// LIMITATIONS
     ///
-    /// Component types are not converted from the input to the output, so it's important that
-    /// they are stored in the input files exactly in the types supported by glTF 2.0.
-    /// This means that double precision float attribute will not be transferred to a
-    /// single precision float attribute in glTF, but will simply be ignored.
+    /// Component types are not converted from the input to the output, so it's
+    /// important that they are stored in the input files exactly in the types
+    /// supported by glTF 2.0.  This means that double precision float attribute
+    /// will not be transferred to a single precision float attribute in glTF,
+    /// but will simply be ignored.
     ///
     /// EXAMPLES
     ///
-    /// The following is a valid attribute list demonstrating different ways to specify types and
-    /// component types:
+    /// The following is a valid attribute list demonstrating different ways to
+    /// specify types and component types:
     ///
     /// '{"temperature":F32, "force":Vec3(F32), "material":Scalar(u32)}'
     ///
     #[structopt(short, long, default_value = "{}")]
     attributes: AttributeInfo,
 
-    /// A list of texture coordinate attributes and their types to transfer provided as a
-    /// dictionary:
+    /// A list of texture coordinate attributes and their types to transfer
+    /// provided as a dictionary:
     ///
     /// '{"texcoord0":component_type1, "texcoord1":component_type2, ..}'
     ///
-    /// The texture coordinate attribute names should appear exactly how they are named in the
-    /// input mesh files.  On the output, these names will be converted to TEXCOORD_# where #
-    /// corresponds to the index (starting from 0) in the order they are provided on the command
-    /// line.
+    /// The texture coordinate attribute names should appear exactly how they
+    /// are named in the input mesh files.  On the output, these names will be
+    /// converted to TEXCOORD_# where # corresponds to the index (starting from
+    /// 0) in the order they are provided on the command line.
     ///
-    /// The component type can be one of
+    /// The component type can be one of [U8, U16, F32].
     ///
-    ///     U8, U16, or F32
-    ///
-    /// which correspond to 'GL_UNSIGNED_BYTE', 'GL_UNSIGNED_SHORT', and 'GL_FLOAT' respectively.
+    /// which correspond to 'GL_UNSIGNED_BYTE', 'GL_UNSIGNED_SHORT', and
+    /// 'GL_FLOAT' respectively.
     ///
     /// Note that component type names may be specified in lower case as well.
     ///
@@ -151,8 +159,8 @@ struct Opt {
     #[structopt(short = "u", long, default_value = "{}")]
     texcoords: TextureAttributeInfo,
 
-    /// Specify textures in Rusty Object Notation (RON) (https://github.com/ron-rs/ron) as a list
-    /// of structs:
+    /// Specify textures in Rusty Object Notation (RON)
+    /// (https://github.com/ron-rs/ron) as a list of structs:
     ///
     /// "(
     ///     image: Image,
@@ -162,90 +170,80 @@ struct Opt {
     ///     [min_filter: MinFilter,]
     /// ) .."
     ///
-    /// where the fields in brackets '[]' represent optional fields.
-    /// 'Image', 'WrappingMode', 'MagFilter' and 'MinFilter' are enums (variants) that take on the
+    /// where the fields in brackets '[]' represent optional fields.  'Image',
+    /// 'WrappingMode', 'MagFilter' and 'MinFilter' are enums (variants) that
+    /// take on the following values:
+    ///
+    /// 'Image' is one of * Uri(path_to_image) * Embed(path_to_image)
+    ///
+    /// where 'path_to_image' is the path to a 'png' or a 'jpeg' image which
+    /// will be either referenced ('Uri') or embedded ('Embed') into the gltf
+    /// file itself.
+    ///
+    /// The remaining optional fields describe the sampler and can take on the
     /// following values:
     ///
-    /// 'Image' is one of
-    ///     * Uri(path_to_image)
-    ///     * Embed(path_to_image)
+    /// 'WrappingMode' is one of [ClampedToEdge, MirroredRepeat, Repeat (default)].
     ///
-    /// where 'path_to_image' is the path to a 'png' or a 'jpeg' image which will be either
-    /// referenced ('Uri') or embedded ('Embed') into the gltf file itself.
+    /// 'MagFilter' is one of [Nearest, Linear].
     ///
-    /// The remaining optional fields describe the sampler and can take on the following values:
-    ///
-    /// 'WrappingMode' is one of
-    ///     * ClampedToEdge
-    ///     * MirroredRepeat
-    ///     * Repeat (default)
-    ///
-    /// 'MagFilter' is one of
-    ///     * Nearest
-    ///     * Linear
-    ///
-    /// 'MinFilter' is one of
-    ///     * Nearest
-    ///     * Linear
-    ///     * NearestMipmapNearest
-    ///     * LinearMipmapNearest
-    ///     * NearestMipmapLinear
-    ///     * LinearMipmapLinear
+    /// 'MinFilter' is one of [Nearest, Linear, NearestMipmapNearest,
+    /// LinearMipmapNearest, NearestMipmapLinear, or LinearMipmapLinear].
     ///
     /// See the glTF 2.0 specifications for more details
     /// https://github.com/KhronosGroup/glTF/tree/master/specification/2.0#texture-data
     ///
     /// Note that all options may be specified in snake_case as well.
     ///
-    ///
     /// EXAMPLES
     ///
     /// The following is a valid texture list:
     ///
-    /// '(image: Uri("./texture.png"))
-    ///  (image: Embed("./texture2.png"), wrap_s: Repeat wrap_t: mirrored_repeat)'
+    /// '(image: Uri("./texture.png")) (image: Embed("./texture2.png"), wrap_s:
+    /// Repeat wrap_t: mirrored_repeat)'
     ///
     #[structopt(short = "x", long)]
     textures: Vec<TextureInfo>,
 
-    /// Specify material properties in Rusty Object Notation (RON) (https://github.com/ron-rs/ron)
-    /// as a list of structs:
+    /// Specify material properties in Rusty Object Notation (RON)
+    /// (https://github.com/ron-rs/ron) as a list of structs:
     ///
-    /// "(
-    ///     name: String,
-    ///     base_color: [f32; 4],                       // default: [0.5, 0.5, 0.5, 1.0]
-    ///     base_texture: (index: u32, texcoord: u32),  // default: (index: 0, texcoord: 0)
-    ///     metallic: f32,                              // default: 0.5
-    ///     roughness: f32,                             // default: 0.5
-    /// ) .."
+    /// "(name:String, base_color:[f32; 4], base_texture:(index:u32,texcoord:u32),
+    ///   metallic:f32, roughness:f32) .."
     ///
-    /// where 'f32' indicates a single precision floating point value, and 'u32' a 32 bit unsigned
-    /// integer. All fields are optional. The type '[f32; 4]' is an array of 4 floats corresponding
-    /// to red, green, blue and alpha values between 0.0 and 1.0. 'metallic' and 'roughness'
-    /// factors are expected to be between 0.0 and 1.0.
+    /// where 'f32' indicates a single precision floating point value, and 'u32'
+    /// a 32 bit unsigned integer. All fields are optional. The type '[f32; 4]'
+    /// is an array of 4 floats corresponding to red, green, blue and alpha
+    /// values between 0.0 and 1.0. 'metallic' and 'roughness' factors are
+    /// expected to be between 0.0 and 1.0.
     ///
+    /// Default values are 0.5 for 'metallic' and 'roughness' is 0.5, [0.5, 0.5,
+    /// 0.5, 1.0] for 'base_color, and (index: 0, texcoord: 0) for 'texture'.
     ///
     /// EXAMPLES
     ///
     /// The following are examples of valid material specifications:
     ///
     /// "()"
+    ///
     /// produces a default material.
     ///
     /// '(name: "material0", base_color: [0.1, 0.2, 0.3, 1.0], metallic: 0.0)'
-    /// produces a material named "material0" with the specified base_color and metallic factor.
+    ///
+    /// produces a material named "material0" with the specified base_color and
+    /// metallic factor.
     ///
     #[structopt(short, long)]
     materials: Vec<MaterialInfo>,
 
-    /// Specify the name of the material attribute to use for determining which materials should be
-    /// assigned to which meshes.
+    /// Specify the name of the material attribute to use for determining which
+    /// materials should be assigned to which meshes.
     ///
-    /// The material attribute must reside on primitives (i.e. polygons on polygon meshes and
-    /// tetrahedra on tetrahedron meshes).
+    /// The material attribute must reside on primitives (i.e. polygons on
+    /// polygon meshes and tetrahedra on tetrahedron meshes).
     ///
-    /// This attribute must be an unsigned 32 bit integer and must index materials specified by the
-    /// '-m' or '--materials' flag.
+    /// This attribute must be an unsigned 32 bit integer and must index
+    /// materials specified by the '-m' or '--materials' flag.
     ///
     #[structopt(short = "ma", long, default_value = "mtl_id")]
     material_attribute: String,
@@ -279,7 +277,10 @@ impl fmt::Display for Error {
 }
 
 fn main() -> Result<(), Error> {
-    let opt = Opt::from_args();
+    use terminal_size::{Width, terminal_size};
+    let app = Opt::clap()
+        .set_term_width(if let Some((Width(w), _)) = terminal_size() { w as usize } else { 80 });
+    let opt = Opt::from_clap(&app.get_matches());
 
     let pattern = if opt.pattern.starts_with("./") {
         &opt.pattern[2..]
