@@ -71,7 +71,7 @@ struct Opt {
     #[structopt(short, long)]
     quiet: bool,
 
-    /// Step by this number of frames.
+    /// Step by the given of frames, ignoring intermediate frames.
     ///
     /// In other words, read frames in increments of 'step'.  Note that this
     /// does not affect the value for 'fps' or 'time_step' options.  This number
@@ -84,7 +84,9 @@ struct Opt {
     step: usize,
 
     /// A list of custom vertex attributes and their types to transfer provided
-    /// as a dictionary:
+    /// as a dictionary string.
+    ///
+    /// The dictionary string should have the following pattern:
     ///
     /// '{"attribute1":type1(component1), "attribute2":type2(component2), ..}'
     ///
@@ -131,7 +133,9 @@ struct Opt {
     attributes: AttributeInfo,
 
     /// A list of texture coordinate attributes and their types to transfer
-    /// provided as a dictionary:
+    /// provided as a dictionary string.
+    ///
+    /// The dictionary string should have the following pattern:
     ///
     /// '{"texcoord0":component_type1, "texcoord1":component_type2, ..}'
     ///
@@ -161,7 +165,9 @@ struct Opt {
     texcoords: TextureAttributeInfo,
 
     /// Specify textures in Rusty Object Notation (RON)
-    /// (https://github.com/ron-rs/ron) as a list of structs:
+    /// (https://github.com/ron-rs/ron) as a list of structs.
+    ///
+    /// Each struct should have the following pattern:
     ///
     /// "(
     ///     image: Image,
@@ -207,7 +213,9 @@ struct Opt {
     textures: Vec<TextureInfo>,
 
     /// Specify material properties in Rusty Object Notation (RON)
-    /// (https://github.com/ron-rs/ron) as a list of structs:
+    /// (https://github.com/ron-rs/ron) as a list of structs.
+    ///
+    /// Each struct should have the following pattern:
     ///
     /// "(name:String, base_color:[f32; 4], base_texture:(index:u32,texcoord:u32),
     ///   metallic:f32, roughness:f32) .."
