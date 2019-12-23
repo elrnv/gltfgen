@@ -1,7 +1,3 @@
-//!
-//! gltfgen is a command line tool for generating gltf files in standard and
-//! binary formats from a given sequence of mesh files.
-//!
 #[macro_use]
 mod attrib;
 mod export;
@@ -24,14 +20,16 @@ use rayon::prelude::*;
 
 use snafu::Snafu;
 
+const ABOUT: &str = "
+gltfgen generates gltf files in standard and binary formats from a given sequence of mesh files.";
+
 #[derive(StructOpt, Debug)]
-#[structopt(about, name = "gltfgen")]
+#[structopt(author, about = ABOUT, name = "gltfgen")]
 struct Opt {
     /// Output glTF file
-    #[structopt(parse(from_os_str))]
+    #[structopt(name = "OUTPUT", parse(from_os_str))]
     output: PathBuf,
-    /// A glob pattern matching files to be included in the generated glTF
-    /// document.
+    /// A glob pattern matching input mesh files.
     ///
     /// Use # to match a frame number. If more than one '#' is used, the first
     /// match will correspond to the frame number. Note that the glob pattern
@@ -44,26 +42,28 @@ struct Opt {
     /// strings within will be concatenated to produce a unique name.  Note that
     /// for the time being, '{' '}' are ignored when the glob pattern is
     /// matched.
-    #[structopt(parse(from_str))]
+    #[structopt(name = "PATTERN", parse(from_str))]
     pattern: String,
 
-    /// Frames per second. 1/fps gives the time step between discrete frames. If
-    /// 'time_step' is also provided, this parameter is ignored.
-    #[structopt(short, long, default_value = "24")]
+    /// Frames per second.
+    ///
+    /// 1/fps gives the time step between discrete frames. If 'time_step' is also provided, this
+    /// parameter is ignored.
+    #[structopt(value_name = "FPS", short, long, default_value = "24")]
     fps: usize,
 
-    /// Time step in seconds between discrete frames. Specifying this option
-    /// overrides the time step that would be computed from 'fps', which is set
-    /// to 24 by default.  This means that the default 'time_step' is
-    /// equivalently 1/24.
-    #[structopt(short, long)]
+    /// Time step in seconds between discrete frames.
+    ///
+    /// Specifying this option overrides the time step that would be computed from 'fps', which is
+    /// set to 24 by default.  This means that the default 'time_step' is equivalently 1/24.
+    #[structopt(value_name = "TIMESTEP", short, long)]
     time_step: Option<f32>,
 
-    /// Reverse polygon orientations in the output glTF meshes.
+    /// Reverse polygon orientations on output meshes.
     #[structopt(short, long)]
     reverse: bool,
 
-    /// Invert tetrahedra orientations on the input meshes.
+    /// Invert tetrahedra orientations on input meshes.
     #[structopt(short, long)]
     invert_tets: bool,
 
@@ -71,7 +71,7 @@ struct Opt {
     #[structopt(short, long)]
     quiet: bool,
 
-    /// Step by the given of frames, ignoring intermediate frames.
+    /// Step by the given number of frames.
     ///
     /// In other words, read frames in increments of 'step'.  Note that this
     /// does not affect the value for 'fps' or 'time_step' options.  This number
@@ -80,11 +80,10 @@ struct Opt {
     /// For example for frames 1 to 10, a 'step' value of 3 will read frames 1,
     /// 4, 7, and 10.
     ///
-    #[structopt(short, long, default_value = "1")]
+    #[structopt(value_name = "STEPS", short, long, default_value = "1")]
     step: usize,
 
-    /// A list of custom vertex attributes and their types to transfer provided
-    /// as a dictionary string.
+    /// A dictionary of custom vertex attributes and their types.
     ///
     /// The dictionary string should have the following pattern:
     ///
@@ -129,11 +128,10 @@ struct Opt {
     ///
     /// '{"temperature":F32, "force":Vec3(F32), "material":Scalar(u32)}'
     ///
-    #[structopt(short, long, default_value = "{}")]
+    #[structopt(value_name = "ATTRIBS", short, long, default_value = "{}")]
     attributes: AttributeInfo,
 
-    /// A list of texture coordinate attributes and their types to transfer
-    /// provided as a dictionary string.
+    /// A dictionary of texture coordinate attributes and their types.
     ///
     /// The dictionary string should have the following pattern:
     ///
@@ -161,11 +159,10 @@ struct Opt {
     ///
     /// '{"uv": f32, "bump": F32}'
     ///
-    #[structopt(short = "u", long, default_value = "{}")]
+    #[structopt(value_name = "TEXCOORDS", short = "u", long, default_value = "{}")]
     texcoords: TextureAttributeInfo,
 
-    /// Specify textures in Rusty Object Notation (RON)
-    /// (https://github.com/ron-rs/ron) as a list of structs.
+    /// A tuple of texture parameters.
     ///
     /// Each struct should have the following pattern:
     ///
@@ -209,11 +206,10 @@ struct Opt {
     /// '(image: Uri("./texture.png")) (image: Embed("./texture2.png"), wrap_s:
     /// Repeat wrap_t: mirrored_repeat)'
     ///
-    #[structopt(short = "x", long)]
+    #[structopt(value_name = "TEXTURES", short = "x", long)]
     textures: Vec<TextureInfo>,
 
-    /// Specify material properties in Rusty Object Notation (RON)
-    /// (https://github.com/ron-rs/ron) as a list of structs.
+    /// A tuple of material properties.
     ///
     /// Each struct should have the following pattern:
     ///
@@ -242,19 +238,17 @@ struct Opt {
     /// produces a material named "material0" with the specified base_color and
     /// metallic factor.
     ///
-    #[structopt(short, long)]
+    #[structopt(value_name = "MATERIALS", short, long)]
     materials: Vec<MaterialInfo>,
 
-    /// Specify the name of the material attribute to use for determining which
-    /// materials should be assigned to which meshes.
+    /// Name of the material attribute on mesh faces or cells.
     ///
-    /// The material attribute must reside on primitives (i.e. polygons on
-    /// polygon meshes and tetrahedra on tetrahedron meshes).
+    /// This is used for determining which materials should be assigned to which meshes.
     ///
-    /// This attribute must be an integer (at most 64 bit) and must index
-    /// materials specified by the '-m' or '--materials' flag.
+    /// This attribute must be an integer (at most 64 bit) and must index materials specified by
+    /// the '-m' or '--materials' flag.
     ///
-    #[structopt(short = "e", long, default_value = "mtl_id")]
+    #[structopt(value_name = "MTL-ATTRIB", short = "e", long, default_value = "mtl_id")]
     material_attribute: String,
 }
 

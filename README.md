@@ -16,12 +16,12 @@ For special builds see [Releases](https://github.com/elrnv/gltfgen/releases).
 The following is the most basic usage pattern:
 
 ```
-> gltfgen [FLAGS] [OPTIONS] <output> <pattern>
+> gltfgen [FLAGS] [OPTIONS] <OUTPUT> <PATTERN>
 ```
 
-  - `<output>`     Output glTF file
+  - `<OUTPUT>`     Output glTF file
 
-  - `<pattern>`    A glob pattern matching files to be included in the generated glTF document. Use `#` to match a frame number. Use '{' and '}' to select parts of the pattern to be used to name meshes in the output glTF.
+  - `<PATTERN>`    A glob pattern matching files to be included in the generated glTF document. Use `#` to match a frame number. Use '{' and '}' to select parts of the pattern to be used to name meshes in the output glTF.
 
 Run `gltfgen -h` for more options and `gltfgen --help` for full details.
 
