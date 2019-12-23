@@ -14,7 +14,6 @@ use material::*;
 use texture::*;
 use utils::*;
 
-use std::fmt;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use structopt::StructOpt;
@@ -22,6 +21,8 @@ use structopt::StructOpt;
 use gut::mesh::TriMesh;
 
 use rayon::prelude::*;
+
+use snafu::Snafu;
 
 #[derive(StructOpt, Debug)]
 #[structopt(about, name = "gltfgen")]
@@ -228,7 +229,7 @@ struct Opt {
     ///
     /// produces a default material.
     ///
-    /// '(name: "material0", base_color: [0.1, 0.2, 0.3, 1.0], metallic: 0.0)'
+    /// '(name:"material0", base_color:[0.1, 0.2, 0.3, 1.0], metallic:0.0)'
     ///
     /// produces a material named "material0" with the specified base_color and
     /// metallic factor.
@@ -242,44 +243,42 @@ struct Opt {
     /// The material attribute must reside on primitives (i.e. polygons on
     /// polygon meshes and tetrahedra on tetrahedron meshes).
     ///
-    /// This attribute must be an unsigned 32 bit integer and must index
+    /// This attribute must be an integer (at most 64 bit) and must index
     /// materials specified by the '-m' or '--materials' flag.
     ///
-    #[structopt(short = "ma", long, default_value = "mtl_id")]
+    #[structopt(short = "e", long, default_value = "mtl_id")]
     material_attribute: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Snafu)]
 enum Error {
-    GlobError(glob::GlobError),
-    GlobPatternError(glob::PatternError),
+    #[snafu(display("{}", src.to_string()))]
+    GlobError { src: glob::GlobError },
+    #[snafu(display("{}", src.to_string()))]
+    GlobPatternError { src: glob::PatternError },
+    /// No valid meshes were found.
+    NoMeshesFound,
 }
 
 impl From<glob::GlobError> for Error {
-    fn from(glob_err: glob::GlobError) -> Error {
-        Error::GlobError(glob_err)
+    fn from(src: glob::GlobError) -> Error {
+        Error::GlobError { src }
     }
 }
 
 impl From<glob::PatternError> for Error {
     fn from(src: glob::PatternError) -> Error {
-        Error::GlobPatternError(src)
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            Error::GlobError(e) => e.fmt(f),
-            Error::GlobPatternError(e) => e.fmt(f),
-        }
+        Error::GlobPatternError { src }
     }
 }
 
 fn main() -> Result<(), Error> {
-    use terminal_size::{Width, terminal_size};
-    let app = Opt::clap()
-        .set_term_width(if let Some((Width(w), _)) = terminal_size() { w as usize } else { 80 });
+    use terminal_size::{terminal_size, Width};
+    let app = Opt::clap().set_term_width(if let Some((Width(w), _)) = terminal_size() {
+        w as usize
+    } else {
+        80
+    });
     let opt = Opt::from_clap(&app.get_matches());
 
     let pattern = if opt.pattern.starts_with("./") {
@@ -424,6 +423,10 @@ fn main() -> Result<(), Error> {
     } else {
         1.0 / opt.fps as f32
     };
+
+    if meshes.is_empty() {
+        return Err(Error::NoMeshesFound);
+    }
 
     if !opt.quiet {
         println!("Exporting glTF...");

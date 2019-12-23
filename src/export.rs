@@ -15,6 +15,12 @@ use pbr::ProgressBar;
 use std::borrow::Cow;
 use std::path::PathBuf;
 
+mod animation;
+mod builders;
+
+use animation::*;
+use builders::*;
+
 type TriMesh = gut::mesh::TriMesh<f32>;
 
 #[derive(Clone)]
@@ -144,200 +150,6 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh, AttribTransfer)>, quiet: bool
     out
 }
 
-// The following builders are missing from gltf_json for some reason so we implement a builder here.
-// These may be obsolete when the gltf crate is updated.
-
-trait BufferViewBuilder {
-    fn new(byte_length: usize, byte_offset: usize) -> json::buffer::View;
-    fn with_target(self, target: json::buffer::Target) -> json::buffer::View;
-    fn with_stride(self, byte_stride: usize) -> json::buffer::View;
-}
-
-impl BufferViewBuilder for json::buffer::View {
-    fn new(byte_length: usize, byte_offset: usize) -> json::buffer::View {
-        json::buffer::View {
-            buffer: json::Index::new(0),
-            byte_length: byte_length as u32,
-            byte_offset: Some(byte_offset as u32),
-            byte_stride: None,
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            target: None,
-        }
-    }
-    fn with_target(mut self, target: json::buffer::Target) -> json::buffer::View {
-        self.target = Some(Valid(target));
-        self
-    }
-    fn with_stride(mut self, byte_stride: usize) -> json::buffer::View {
-        self.byte_stride = Some(byte_stride as u32);
-        self
-    }
-}
-
-trait AccessorBuilder {
-    fn new(buf_view: usize, count: usize, generic_comp: GltfComponentType) -> json::Accessor;
-    fn with_type(self, type_: GltfType) -> json::Accessor;
-    fn with_component_type(
-        self,
-        component_type: json::accessor::GenericComponentType,
-    ) -> json::Accessor;
-    fn with_min_max<'a, T>(self, min: &'a [T], max: &'a [T]) -> json::Accessor
-    where
-        json::Value: From<&'a [T]>;
-    fn with_sparse(
-        self,
-        count: usize,
-        indices_buf_view: usize,
-        values_buf_view: usize,
-    ) -> json::Accessor;
-}
-
-impl AccessorBuilder for json::Accessor {
-    /// Assumes scalar type.
-    fn new(
-        buf_view: usize,
-        count: usize,
-        generic_component_type: GltfComponentType,
-    ) -> json::Accessor {
-        // TODO: when gltf is updated to support sparse accessors without buffer view pointers,
-        //       we need to replace `buffer_view` below with an Option.
-        //       Probably still Some(..) since blender doesn't support proper sparse accessors.
-        json::Accessor {
-            buffer_view: json::Index::new(buf_view as u32).into(),
-            byte_offset: 0,
-            count: count as u32,
-            component_type: Valid(json::accessor::GenericComponentType(generic_component_type)),
-            extensions: Default::default(),
-            extras: Default::default(),
-            type_: Valid(GltfType::Scalar),
-            min: None,
-            max: None,
-            name: None,
-            normalized: false,
-            sparse: None,
-        }
-    }
-    fn with_type(mut self, type_: GltfType) -> json::Accessor {
-        self.type_ = Valid(type_);
-        self
-    }
-    fn with_component_type(
-        mut self,
-        component_type: json::accessor::GenericComponentType,
-    ) -> json::Accessor {
-        self.component_type = Valid(component_type);
-        self
-    }
-    fn with_min_max<'a, T>(mut self, min: &'a [T], max: &'a [T]) -> json::Accessor
-    where
-        json::Value: From<&'a [T]>,
-    {
-        self.min = Some(json::Value::from(min));
-        self.max = Some(json::Value::from(max));
-        self
-    }
-    fn with_sparse(
-        mut self,
-        count: usize,
-        indices_buf_view: usize,
-        values_buf_view: usize,
-    ) -> json::Accessor {
-        self.sparse = Some(json::accessor::sparse::Sparse {
-            count: count as u32,
-            indices: json::accessor::sparse::Indices {
-                buffer_view: json::Index::new(indices_buf_view as u32),
-                byte_offset: 0,
-                component_type: Valid(json::accessor::IndexComponentType(GltfComponentType::U32)),
-                extensions: Default::default(),
-                extras: Default::default(),
-            },
-            values: json::accessor::sparse::Values {
-                buffer_view: json::Index::new(values_buf_view as u32),
-                byte_offset: 0,
-                extensions: Default::default(),
-                extras: Default::default(),
-            },
-            extensions: Default::default(),
-            extras: Default::default(),
-        });
-        self
-    }
-}
-
-/// Generic interface to byteorder
-trait WriteBytes {
-    fn write_bytes(&self, data: &mut Vec<u8>);
-}
-impl WriteBytes for u8 {
-    #[inline]
-    fn write_bytes(&self, data: &mut Vec<u8>) {
-        data.write_u8(*self).unwrap();
-    }
-}
-impl WriteBytes for i8 {
-    #[inline]
-    fn write_bytes(&self, data: &mut Vec<u8>) {
-        data.write_i8(*self).unwrap();
-    }
-}
-impl WriteBytes for i16 {
-    #[inline]
-    fn write_bytes(&self, data: &mut Vec<u8>) {
-        data.write_i16::<LE>(*self).unwrap();
-    }
-}
-impl WriteBytes for u16 {
-    #[inline]
-    fn write_bytes(&self, data: &mut Vec<u8>) {
-        data.write_u16::<LE>(*self).unwrap();
-    }
-}
-impl WriteBytes for u32 {
-    #[inline]
-    fn write_bytes(&self, data: &mut Vec<u8>) {
-        data.write_u32::<LE>(*self).unwrap();
-    }
-}
-impl WriteBytes for f32 {
-    #[inline]
-    fn write_bytes(&self, data: &mut Vec<u8>) {
-        data.write_f32::<LE>(*self).unwrap();
-    }
-}
-
-macro_rules! impl_write_bytes_for_arr {
-    [$($n:expr)+] => {
-        $(
-            impl<T: WriteBytes> WriteBytes for [T; $n] {
-                #[inline]
-                fn write_bytes(&self, data: &mut Vec<u8>) { for x in self { x.write_bytes(data); } }
-            }
-        )*
-    };
-}
-impl_write_bytes_for_arr![2 3 4];
-
-fn write_attribute_data<T: WriteBytes + 'static>(data: &mut Vec<u8>, attrib: &Attribute) {
-    let iter = VertexAttribute::iter::<T>(&attrib.attribute).expect(&format!(
-        "Unsupported attribute: \"{:?}\"",
-        (attrib.name.as_str(), attrib.type_)
-    ));
-    iter.for_each(|x| x.write_bytes(data));
-}
-
-fn write_tex_attribute_data<T: WriteBytes + 'static>(
-    data: &mut Vec<u8>,
-    attrib: &TextureAttribute,
-) {
-    let iter = FaceVertexAttribute::iter::<T>(&attrib.attribute).expect(&format!(
-        "Unsupported texture coordinate attribute: \"{:?}\"",
-        (attrib.name.as_str(), attrib.component_type)
-    ));
-    iter.for_each(|x| x.write_bytes(data));
-}
-
 pub(crate) fn export(
     mut meshes: Vec<(String, usize, TriMesh, AttribTransfer)>,
     output: PathBuf,
@@ -458,33 +270,44 @@ pub(crate) fn export(
             .collect();
 
         // Push texture coordinate attributes to data buffer.
-        attrib_transfer.1.iter().for_each(|attrib| {
+        let tex_attrib_acc_indices: Vec<_> = attrib_transfer.1.iter().filter_map(|attrib| {
             let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
             let num_bytes = match attrib.component_type {
-                ComponentType::U8 => mem::size_of::<u8>(),
-                ComponentType::U16 => mem::size_of::<u16>(),
-                ComponentType::F32 => mem::size_of::<f32>(),
-                t => panic!(
-                    "Invalid texture coordinate attribute type detected: {:?}",
-                    t
-                ),
+                ComponentType::U8 => mem::size_of::<[u8; 2]>(),
+                ComponentType::U16 => mem::size_of::<[u16; 2]>(),
+                ComponentType::F32 => mem::size_of::<[f32; 2]>(),
+                t => {
+                    eprintln!(
+                        "WARNING: Invalid texture coordinate attribute type detected: {:?}. Skipping...",
+                        t
+                    );
+                    return None;
+                }
             };
-            let attrib_view = json::buffer::View::new(byte_length, data.len())
+            let orig_data_len = data.len();
+
+            // First let's try to write the data to flush out any problems before appending the
+            // buffer view. This way we can bail early without having to roll back state.
+            match attrib.component_type {
+                ComponentType::U8 => write_tex_attribute_data::<u8>(&mut data, &attrib),
+                ComponentType::U16 => write_tex_attribute_data::<u16>(&mut data, &attrib),
+                ComponentType::F32 => write_tex_attribute_data::<f32>(&mut data, &attrib),
+                t => {
+                    eprintln!(
+                        "WARNING: Invalid texture coordinate attribute type detected: {:?}. Skipping...",
+                        t
+                    );
+                    return None;
+                }
+            }
+
+            // Everything seems ok, continue with building the json structure.
+            let attrib_view = json::buffer::View::new(byte_length, orig_data_len)
                 .with_stride(num_bytes)
                 .with_target(json::buffer::Target::ArrayBuffer);
 
             let attrib_view_index = buffer_views.len();
             buffer_views.push(attrib_view);
-
-            match attrib.component_type {
-                ComponentType::U8 => write_tex_attribute_data::<u8>(&mut data, &attrib),
-                ComponentType::U16 => write_tex_attribute_data::<u16>(&mut data, &attrib),
-                ComponentType::F32 => write_tex_attribute_data::<f32>(&mut data, &attrib),
-                t => panic!(
-                    "Invalid texture coordinate attribute type detected: {:?}",
-                    t
-                ),
-            }
 
             let attrib_acc = json::Accessor::new(
                 attrib_view_index,
@@ -493,149 +316,16 @@ pub(crate) fn export(
             )
             .with_type(GltfType::Vec2);
 
-            //let attrib_acc_index = accessors.len() as u32;
+            let attrib_acc_index = accessors.len() as u32;
             accessors.push(attrib_acc);
-            //attrib_acc_index
-        });
+            Some(attrib_acc_index)
+        }).collect();
 
-        // Initialize animation frames
-        let num_animation_frames = morphs.len() + 1;
-
-        // Sparse weight indices
-        let byte_length = morphs.len() * mem::size_of::<u32>();
-        let weight_indices_view = json::buffer::View::new(byte_length, data.len());
-
-        // Note: first frame is all zeros
-        for i in 0..morphs.len() {
-            // all frames but first have a non-zero weight
-            let index = morphs.len() * (i + 1) + i;
-            data.write_u32::<LE>(index as u32).unwrap();
+        let (animation, targets) =
+            build_animation(first_frame, &morphs, nodes.len(), &mut accessors, &mut buffer_views, &mut data, time_step, quiet, &mut pb);
+        if let Some(animation) = animation {
+            animations.push(animation);
         }
-        let weight_indices_view_index = buffer_views.len();
-        buffer_views.push(weight_indices_view);
-
-        // Initialized weights
-        let byte_length = num_animation_frames * morphs.len() * mem::size_of::<f32>();
-        let initial_weights_view = json::buffer::View::new(byte_length, data.len());
-
-        for _ in 0..(num_animation_frames * morphs.len()) {
-            data.write_f32::<LE>(0.0).unwrap();
-        }
-        let initial_weights_view_index = buffer_views.len();
-        buffer_views.push(initial_weights_view);
-
-        // Output animation frames as weights
-        let weight_view = json::buffer::View::new(morphs.len() * mem::size_of::<f32>(), data.len());
-
-        let weight_view_index = buffer_views.len();
-        buffer_views.push(weight_view);
-
-        for _ in 0..morphs.len() {
-            data.write_f32::<LE>(1.0).unwrap();
-        }
-
-        // Weights accessor for all frames
-        let weights_acc = json::Accessor::new(
-            initial_weights_view_index,
-            num_animation_frames * morphs.len(),
-            GltfComponentType::F32,
-        )
-        .with_min_max(&[0.0][..], &[1.0][..])
-        .with_sparse(morphs.len(), weight_indices_view_index, weight_view_index);
-
-        let weights_acc_index = accessors.len() as u32;
-        accessors.push(weights_acc);
-
-        // Animation keyframe times
-        let byte_length = num_animation_frames * mem::size_of::<f32>();
-        let time_view = json::buffer::View::new(byte_length, data.len());
-
-        let mut min_time = first_frame as f32 * time_step;
-        let mut max_time = first_frame as f32 * time_step;
-        data.write_f32::<LE>(first_frame as f32 * time_step)
-            .unwrap();
-        for (frame, _) in morphs.iter() {
-            let time = *frame as f32 * time_step;
-            min_time = min_time.min(time);
-            max_time = max_time.max(time);
-            data.write_f32::<LE>(time).unwrap();
-        }
-        let time_view_index = buffer_views.len();
-        buffer_views.push(time_view);
-
-        let time_acc = json::Accessor::new(
-            time_view_index,
-            num_animation_frames,
-            GltfComponentType::F32,
-        )
-        .with_min_max(&[min_time][..], &[max_time][..]);
-
-        let time_acc_index = accessors.len() as u32;
-        accessors.push(time_acc);
-
-        // Add morph targets
-        let mut targets = Vec::new();
-        for (_, displacements) in morphs.into_iter() {
-            if !quiet {
-                pb.inc();
-            }
-            let byte_length = displacements.len() * mem::size_of::<[f32; 3]>();
-
-            let disp_view = json::buffer::View::new(byte_length, data.len())
-                .with_stride(mem::size_of::<[f32; 3]>())
-                .with_target(json::buffer::Target::ArrayBuffer);
-            let disp_view_index = buffer_views.len();
-            buffer_views.push(disp_view);
-
-            let mut bbox = gut::bbox::BBox::empty();
-            for disp in displacements.iter() {
-                bbox.absorb(*disp);
-                for &coord in disp.iter() {
-                    data.write_f32::<LE>(coord).unwrap();
-                }
-            }
-
-            let disp_acc =
-                json::Accessor::new(disp_view_index, displacements.len(), GltfComponentType::F32)
-                    .with_type(GltfType::Vec3)
-                    .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
-            let disp_acc_index = accessors.len() as u32;
-            accessors.push(disp_acc);
-
-            targets.push(json::mesh::MorphTarget {
-                positions: Some(json::Index::new(disp_acc_index)),
-                normals: None,
-                tangents: None,
-            });
-        }
-
-        // Add an animation using this morph target
-        let channel = json::animation::Channel {
-            sampler: json::Index::new(0),
-            target: json::animation::Target {
-                path: Valid(json::animation::Property::MorphTargetWeights),
-                node: json::Index::new(nodes.len() as u32),
-                extensions: Default::default(),
-                extras: Default::default(),
-            },
-            extensions: Default::default(),
-            extras: Default::default(),
-        };
-
-        let sampler = json::animation::Sampler {
-            input: json::Index::new(time_acc_index), // time
-            interpolation: Valid(json::animation::Interpolation::Linear),
-            output: json::Index::new(weights_acc_index), // weights
-            extensions: Default::default(),
-            extras: Default::default(),
-        };
-        animations.push(json::Animation {
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            channels: vec![channel],
-            samplers: vec![sampler],
-        });
 
         let primitives = vec![json::mesh::Primitive {
             attributes: {
@@ -646,7 +336,7 @@ pub(crate) fn export(
                 );
                 // Texture coordinate attributes
                 for (TextureAttribute { id, .. }, &attrib_acc_index) in
-                    attrib_transfer.1.iter().zip(attrib_acc_indices.iter())
+                    attrib_transfer.1.iter().zip(tex_attrib_acc_indices.iter())
                 {
                     map.insert(
                         Valid(json::mesh::Semantic::TexCoords(*id)),
@@ -669,9 +359,19 @@ pub(crate) fn export(
             extensions: Default::default(),
             extras: Default::default(),
             indices: Some(json::Index::new(idx_acc_index)),
-            material: None,
+            material: 
+                attrib_transfer.2.and_then(|m| {
+                    // Only assign a material index if it actually exists.
+                    // A material attribute may be present without the user realizing or wanting to
+                    // attach a material, but this shouldn't produce an invalid glTF file.
+                    if m < materials.len() as u32 {
+                        Some(json::Index::new(m))
+                    } else {
+                        None
+                    }
+                }),
             mode: Valid(json::mesh::Mode::Triangles),
-            targets: Some(targets),
+            targets,
         }];
 
         nodes.push(json::Node {
@@ -814,15 +514,19 @@ pub(crate) fn export(
                  roughness,
              }| {
                 json::Material {
-                    name: name.to_owned(),
+                    name: if name.is_empty() {
+                        None
+                    } else {
+                        Some(name.to_owned())
+                    },
                     alpha_cutoff: json::material::AlphaCutoff(0.5),
                     alpha_mode: Valid(json::material::AlphaMode::Opaque),
                     double_sided: false,
                     pbr_metallic_roughness: json::material::PbrMetallicRoughness {
                         base_color_factor: json::material::PbrBaseColorFactor(*base_color),
-                        base_color_texture: base_texture.map(|t| json::texture::Info {
-                            index: json::Index::new(t.index),
-                            tex_coord: t.texcoord,
+                        base_color_texture: Some(json::texture::Info {
+                            index: json::Index::new(base_texture.index),
+                            tex_coord: base_texture.texcoord,
                             extensions: Default::default(),
                             extras: Default::default(),
                         }),
@@ -858,10 +562,10 @@ pub(crate) fn export(
         uri: match &output {
             Output::Binary { .. } => None,
             Output::Standard { binary_path, .. } => Some(
-                binary_path
-                    .to_str()
-                    .expect("ERROR: Path is not valid UTF-8")
-                    .to_string(),
+                format!("./{}", binary_path.file_name()
+                        .expect(&format!("ERROR: Invalid binary path: {}", binary_path.display()))
+                        .to_str()
+                        .expect("ERROR: Path is not valid UTF-8"))
             ),
         },
     };

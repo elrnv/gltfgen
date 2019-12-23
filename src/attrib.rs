@@ -1,24 +1,34 @@
 use gltf::json;
-use gut::mesh::topology::{FaceIndex, FaceVertexIndex, VertexIndex};
+use gut::mesh::topology::{FaceIndex, VertexIndex};
 use gut::mesh::TriMesh;
 use indexmap::map::IndexMap;
 use serde::Deserialize;
 
 pub(crate) type VertexAttribute = gut::mesh::attrib::Attribute<VertexIndex>;
-pub(crate) type FaceVertexAttribute = gut::mesh::attrib::Attribute<FaceVertexIndex>;
 
 pub(crate) type AttribTransfer = (
     Vec<Attribute>,
     Vec<TextureAttribute>,
-    /*material id*/ u32,
+    /*material id*/ Option<u32>,
 );
+
+/// Find a material id in the given mesh by probing a given integer type `I`.
+fn find_material_id<I: Clone + num_traits::ToPrimitive + 'static>(
+    mesh: &TriMesh<f32>,
+    attrib_name: &str,
+) -> Option<u32> {
+    use gut::mesh::attrib::Attrib;
+    mesh.attrib_iter::<I, FaceIndex>(attrib_name)
+        .ok()
+        .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0)
+}
 
 /// Cleanup unwanted attributes.
 pub(crate) fn clean_attributes(
     mesh: &mut TriMesh<f32>,
     attributes: &AttributeInfo,
     tex_attributes: &TextureAttributeInfo,
-    material_attribute: &String,
+    material_attribute: &str,
 ) -> AttribTransfer {
     // First we remove all attributes we want to keep.
     let attribs_to_keep: Vec<_> = attributes
@@ -30,15 +40,21 @@ pub(crate) fn clean_attributes(
         .0
         .iter()
         .enumerate()
-        .filter_map(|(id, attrib)| remove_texture_coordinate_attribute(mesh, attrib, id))
+        .filter_map(|(id, attrib)| {
+            promote_and_remove_texture_coordinate_attribute(mesh, attrib, id)
+        })
         .collect();
 
     // Compute the material index for this mesh.
-    use gut::mesh::attrib::Attrib;
-    let material_id = mesh
-        .attrib_iter::<u32, FaceIndex>(material_attribute)
-        .map(|x| mode(x.cloned()).0)
-        .unwrap_or(0);
+    // Try a bunch of integer types
+    let material_id = find_material_id::<u32>(mesh, material_attribute)
+        .or_else(|| find_material_id::<i32>(mesh, material_attribute))
+        .or_else(|| find_material_id::<i64>(mesh, material_attribute))
+        .or_else(|| find_material_id::<u64>(mesh, material_attribute))
+        .or_else(|| find_material_id::<i16>(mesh, material_attribute))
+        .or_else(|| find_material_id::<u16>(mesh, material_attribute))
+        .or_else(|| find_material_id::<i8>(mesh, material_attribute))
+        .or_else(|| find_material_id::<u8>(mesh, material_attribute));
 
     // Remove all attributes from the mesh.
     // It is important to delete these attributes, because they could cause a huge memory overhead.
@@ -64,13 +80,48 @@ fn remove_attribute(mesh: &mut TriMesh<f32>, attrib: (&String, &Type)) -> Option
         })
 }
 
-fn remove_texture_coordinate_attribute(
+/// Try to promote the texture coordinate attribute from `FaceVertex` attribute to `Vertex`
+/// attribute.
+fn try_tex_coord_promote<'a, T>(name: &str, mesh: &'a mut TriMesh<f32>) -> Option<()>
+where T: PartialEq + Clone + std::fmt::Debug + 'static
+{
+    use gut::mesh::attrib::AttribPromote;
+    let err = "Texture coordinate collisions detected. Please report this issue.";
+    mesh.attrib_promote::<[T; 2], _>(name, |a, b| assert_eq!(&*a, b, "{}", err)).ok().map(|_| ())
+        .or_else(|| mesh.attrib_promote::<[T; 3], _>(name, |a, b| assert_eq!(&*a, b, "{}", err)).ok().map(|_| ()))
+}
+
+/// Promote the given attribute to a vertex attribute by splitting the vertex positions for
+/// unique values of the given face-vertex attribute. Then remove this attribute from the mesh for
+/// later transfer.
+fn promote_and_remove_texture_coordinate_attribute(
     mesh: &mut TriMesh<f32>,
     attrib: (&String, &ComponentType),
     id: usize,
 ) -> Option<TextureAttribute> {
     use gut::mesh::attrib::Attrib;
-    mesh.remove_attrib::<FaceVertexIndex>(&attrib.0)
+
+    // Split the mesh according to texture attributes such that every unique texture attribute
+    // value will have its own unique vertex. This is required since gltf doesn't support multiple
+    // topologies.
+
+    mesh.split_vertices_by_attrib(&attrib.0);
+
+    match *attrib.1 {
+        ComponentType::U8 => try_tex_coord_promote::<u8>(&attrib.0, mesh),
+        ComponentType::U16 => try_tex_coord_promote::<u16>(&attrib.0, mesh),
+        ComponentType::F32 => try_tex_coord_promote::<f32>(&attrib.0, mesh),
+        t => {
+            eprintln!(
+                "WARNING: Invalid texture coordinate attribute type detected: {:?}. Skipping...",
+                t
+            );
+            None
+        }
+    }?;
+
+    // The attribute has been promoted, remove it from the mesh for later use.
+    mesh.remove_attrib::<VertexIndex>(&attrib.0)
         .ok()
         .map(|a| TextureAttribute {
             id: id as u32,
@@ -85,7 +136,7 @@ pub(crate) struct TextureAttribute {
     pub id: u32,
     pub name: String,
     pub component_type: ComponentType,
-    pub attribute: FaceVertexAttribute,
+    pub attribute: VertexAttribute,
 }
 
 #[derive(Clone, Debug, PartialEq)]

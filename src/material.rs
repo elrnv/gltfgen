@@ -10,6 +10,15 @@ pub(crate) struct TextureRef {
     pub texcoord: u32,
 }
 
+impl Default for TextureRef {
+    fn default() -> TextureRef {
+        TextureRef {
+            index: 0,
+            texcoord: 0,
+        }
+    }
+}
+
 fn default_base_color() -> [f32; 4] {
     [0.5, 0.5, 0.5, 1.0]
 }
@@ -24,10 +33,12 @@ fn default_roughness() -> f32 {
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub(crate) struct MaterialInfo {
-    pub name: Option<String>,
+    #[serde(default)]
+    pub name: String,
     #[serde(default = "default_base_color")]
     pub base_color: [f32; 4],
-    pub base_texture: Option<TextureRef>,
+    #[serde(default)]
+    pub base_texture: TextureRef,
     #[serde(default = "default_metallic")]
     pub metallic: f32,
     #[serde(default = "default_roughness")]

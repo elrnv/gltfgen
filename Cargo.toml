@@ -27,3 +27,9 @@ ron = "0.5"
 serde = "1"
 indexmap = { version = "1", features = ["serde-1"] }
 terminal_size = "0.1"
+num-traits = "0.2"
+snafu = "0.6"
+
+[dev-dependencies]
+assert_cmd = "0.12"
+predicates = "1"

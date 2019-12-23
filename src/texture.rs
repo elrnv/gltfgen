@@ -150,7 +150,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn desrialize_texture() {
+    fn deserialize_texture() {
         let tex = TextureInfo {
             image: ImageInfo::Uri("t.jpg".to_string()),
             wrap_s: WrappingMode::Repeat,

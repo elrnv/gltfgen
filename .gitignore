@@ -4,3 +4,4 @@ Cargo.lock
 /backup
 .vscode
 /bin
+*.hipnc
