@@ -348,9 +348,8 @@ pub(crate) fn export(
                     attrib_transfer.0.iter().zip(attrib_acc_indices.iter())
                 {
                     use heck::ShoutySnakeCase;
-                    let name = format!("_{}", name.to_shouty_snake_case());
                     map.insert(
-                        Valid(json::mesh::Semantic::Extras(name)),
+                        Valid(json::mesh::Semantic::Extras(name.to_shouty_snake_case())),
                         json::Index::new(attrib_acc_index),
                     );
                 }
