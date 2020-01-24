@@ -8,6 +8,7 @@ pub(crate) type VertexAttribute = gut::mesh::attrib::Attribute<VertexIndex>;
 
 pub(crate) type AttribTransfer = (
     Vec<Attribute>,
+    Vec<Attribute>,
     Vec<TextureAttribute>,
     /*material id*/ Option<u32>,
 );
@@ -27,11 +28,17 @@ fn find_material_id<I: Clone + num_traits::ToPrimitive + 'static>(
 pub(crate) fn clean_attributes(
     mesh: &mut TriMesh<f32>,
     attributes: &AttributeInfo,
+    color_attribs: &AttributeInfo,
     tex_attributes: &TextureAttributeInfo,
     material_attribute: &str,
 ) -> AttribTransfer {
     // First we remove all attributes we want to keep.
     let attribs_to_keep: Vec<_> = attributes
+        .0
+        .iter()
+        .filter_map(|attrib| remove_attribute(mesh, attrib))
+        .collect();
+    let color_attribs_to_keep: Vec<_> = color_attribs
         .0
         .iter()
         .filter_map(|attrib| remove_attribute(mesh, attrib))
@@ -65,7 +72,7 @@ pub(crate) fn clean_attributes(
 
     // Instead of reinserting back into the mesh, we keep this outside the mesh so we can
     // determine the type of the attribute.
-    (attribs_to_keep, tex_attribs_to_keep, material_id)
+    (attribs_to_keep, color_attribs_to_keep, tex_attribs_to_keep, material_id)
 }
 
 /// Remove the given attribute from the mesh and return it along with its name.

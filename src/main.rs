@@ -83,6 +83,40 @@ struct Opt {
     #[structopt(value_name = "STEPS", short, long, default_value = "1")]
     step: usize,
 
+    /// A dictionary of color attributes and their types.
+    ///
+    /// The dictionary string should have the following pattern:
+    ///
+    /// '{"color0":type0(component_type0), "color1":type1(component_type1), ..}'
+    ///
+    /// The color attribute names should appear exactly how they are named in
+    /// the input mesh files.  On the output, these names will be converted to
+    /// COLOR_# where # corresponds to the index (starting from
+    /// 0) in the order they are provided on the command line.
+    ///
+    /// The associated types must have the format 'type(component)' where 'type'
+    /// is one of [Vec3, Vec4].
+    ///
+    /// The component type can be one of [U8, U16, F32].
+    ///
+    /// which correspond to 'GL_UNSIGNED_BYTE', 'GL_UNSIGNED_SHORT', and
+    /// 'GL_FLOAT' respectively.
+    ///
+    /// Note that component type names may be specified in lower case as well.
+    ///
+    /// LIMITATIONS
+    ///
+    /// See LIMITATIONS section for the '--attributes' flag.
+    ///
+    /// EXAMPLES
+    ///
+    /// The following is a valid texture coordinate attribute list:
+    ///
+    /// '{"diffuse": Vec3(f32), "bump": Vec3(F32)}'
+    ///
+    #[structopt(value_name = "ATTRIBS", short, long, default_value = "{}")]
+    colors: AttributeInfo,
+
     /// A dictionary of custom vertex attributes and their types.
     ///
     /// The dictionary string should have the following pattern:
@@ -98,7 +132,7 @@ struct Opt {
     /// "_TEMPERATURE_KELVIN" in the output. There are no guarantees for
     /// collision resolution resulting from this conversion.
     ///
-    /// The associated types must have the format type(component) where 'type'
+    /// The associated types must have the format 'type(component)' where 'type'
     /// is one of [Scalar, Vec2, Vec3, Vec4, Mat2, Mat3, or Mat4].
     ///
     /// and 'component' is one of [I8, U8, I16, U16, U32, F32].
@@ -410,6 +444,7 @@ fn main() -> Result<(), Error> {
             let attrib_transfer = clean_attributes(
                 &mut mesh,
                 &opt.attributes,
+                &opt.colors,
                 &opt.texcoords,
                 &opt.material_attribute,
             );

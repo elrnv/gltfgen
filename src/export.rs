@@ -122,7 +122,7 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh, AttribTransfer)>, quiet: bool
             if mesh.num_vertices() == next_mesh.num_vertices()
                 && next_mesh.indices == mesh.indices
                 && name == &next_name
-                && attrib_transfer.2 == next_attrib_transfer.2
+                && attrib_transfer.3 == next_attrib_transfer.3
             // same material
             {
                 // Same topology, convert positions to displacements.
@@ -243,6 +243,33 @@ pub(crate) fn export(
         let pos_acc_index = accessors.len() as u32;
         accessors.push(pos_acc);
 
+        // Push color vertex attribute
+        let color_attrib_acc_indices: Vec<_> = attrib_transfer
+            .1
+            .iter()
+            .map(|attrib| {
+                let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
+                let attrib_view = json::buffer::View::new(byte_length, data.len())
+                    .with_stride(call_typed_fn!(attrib.type_ => mem::size_of :: <_>()))
+                    .with_target(json::buffer::Target::ArrayBuffer);
+
+                let attrib_view_index = buffer_views.len();
+                buffer_views.push(attrib_view);
+
+                call_typed_fn!(attrib.type_ => self::write_attribute_data::<_>(&mut data, &attrib));
+
+                let (type_, component_type) = attrib.type_.into();
+                let attrib_acc =
+                    json::Accessor::new(attrib_view_index, attrib.attribute.len(), component_type)
+                        .with_type(type_);
+
+                let attrib_acc_index = accessors.len() as u32;
+                accessors.push(attrib_acc);
+                attrib_acc_index
+            })
+            .collect();
+
+
         // Push custom vertex attributes to data buffer.
         let attrib_acc_indices: Vec<_> = attrib_transfer
             .0
@@ -270,7 +297,7 @@ pub(crate) fn export(
             .collect();
 
         // Push texture coordinate attributes to data buffer.
-        let tex_attrib_acc_indices: Vec<_> = attrib_transfer.1.iter().filter_map(|attrib| {
+        let tex_attrib_acc_indices: Vec<_> = attrib_transfer.2.iter().filter_map(|attrib| {
             let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
             let num_bytes = match attrib.component_type {
                 ComponentType::U8 => mem::size_of::<[u8; 2]>(),
@@ -336,7 +363,7 @@ pub(crate) fn export(
                 );
                 // Texture coordinate attributes
                 for (TextureAttribute { id, .. }, &attrib_acc_index) in
-                    attrib_transfer.1.iter().zip(tex_attrib_acc_indices.iter())
+                    attrib_transfer.2.iter().zip(tex_attrib_acc_indices.iter())
                 {
                     map.insert(
                         Valid(json::mesh::Semantic::TexCoords(*id)),
@@ -359,7 +386,7 @@ pub(crate) fn export(
             extras: Default::default(),
             indices: Some(json::Index::new(idx_acc_index)),
             material: 
-                attrib_transfer.2.and_then(|m| {
+                attrib_transfer.3.and_then(|m| {
                     // Only assign a material index if it actually exists.
                     // A material attribute may be present without the user realizing or wanting to
                     // attach a material, but this shouldn't produce an invalid glTF file.
