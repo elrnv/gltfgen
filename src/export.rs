@@ -249,14 +249,39 @@ pub(crate) fn export(
             .iter()
             .map(|attrib| {
                 let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
+                let num_bytes = match attrib.type_ {
+                    Type::Vec3(ComponentType::U8 ) => mem::size_of::<[u8 ; 3]>(),
+                    Type::Vec3(ComponentType::U16) => mem::size_of::<[u16; 3]>(),
+                    Type::Vec3(ComponentType::F32) => mem::size_of::<[f32; 3]>(),
+                    Type::Vec4(ComponentType::U8 ) => mem::size_of::<[u8 ; 4]>(),
+                    Type::Vec4(ComponentType::U16) => mem::size_of::<[u16; 4]>(),
+                    Type::Vec4(ComponentType::F32) => mem::size_of::<[f32; 4]>(),
+                    t => {
+                        eprintln!(
+                            "WARNING: Invalid color attribute type detected: {:?}. Skipping...",
+                            t
+                        );
+                        return None;
+                    }
+                };
+
                 let attrib_view = json::buffer::View::new(byte_length, data.len())
-                    .with_stride(call_typed_fn!(attrib.type_ => mem::size_of :: <_>()))
+                    .with_stride(num_bytes)
                     .with_target(json::buffer::Target::ArrayBuffer);
 
                 let attrib_view_index = buffer_views.len();
                 buffer_views.push(attrib_view);
 
-                call_typed_fn!(attrib.type_ => self::write_attribute_data::<_>(&mut data, &attrib));
+                match attrib.type_ {
+                    Type::Vec3(ComponentType::U8 ) => write_color_attribute_data::<[u8 ; 3]>(&mut data, &attrib),
+                    Type::Vec3(ComponentType::U16) => write_color_attribute_data::<[u16; 3]>(&mut data, &attrib),
+                    Type::Vec3(ComponentType::F32) => write_color_attribute_data::<[f32; 3]>(&mut data, &attrib),
+                    Type::Vec4(ComponentType::U8 ) => write_color_attribute_data::<[u8 ; 4]>(&mut data, &attrib),
+                    Type::Vec4(ComponentType::U16) => write_color_attribute_data::<[u16; 4]>(&mut data, &attrib),
+                    Type::Vec4(ComponentType::F32) => write_color_attribute_data::<[f32; 4]>(&mut data, &attrib),
+                    // This must have been checked above.
+                    _ => { unreachable!() }
+                }
 
                 let (type_, component_type) = attrib.type_.into();
                 let attrib_acc =
@@ -319,13 +344,8 @@ pub(crate) fn export(
                 ComponentType::U8 => write_tex_attribute_data::<u8>(&mut data, &attrib),
                 ComponentType::U16 => write_tex_attribute_data::<u16>(&mut data, &attrib),
                 ComponentType::F32 => write_tex_attribute_data::<f32>(&mut data, &attrib),
-                t => {
-                    eprintln!(
-                        "WARNING: Invalid texture coordinate attribute type detected: {:?}. Skipping...",
-                        t
-                    );
-                    return None;
-                }
+                // Other cases must have caused a return in the match above.
+                _ => { unreachable!() }
             }
 
             // Everything seems ok, continue with building the json structure.
@@ -361,6 +381,15 @@ pub(crate) fn export(
                     Valid(json::mesh::Semantic::Positions),
                     json::Index::new(pos_acc_index),
                 );
+                // Color attributes
+                for (id, (Attribute { .. }, &attrib_acc_index)) in
+                    attrib_transfer.1.iter().zip(color_attrib_acc_indices.iter()).enumerate()
+                {
+                    map.insert(
+                        Valid(json::mesh::Semantic::Colors(id)),
+                        json::Index::new(attrib_acc_index),
+                    );
+                }
                 // Texture coordinate attributes
                 for (TextureAttribute { id, .. }, &attrib_acc_index) in
                     attrib_transfer.2.iter().zip(tex_attrib_acc_indices.iter())

@@ -210,3 +210,17 @@ pub(crate) fn write_tex_attribute_data<T: Copy + WriteBytes + 'static>(
         );
     }
 }
+
+pub(crate) fn write_color_attribute_data<T: Copy + WriteBytes + 'static>(
+    data: &mut Vec<u8>,
+    attrib: &Attribute,
+) {
+    if let Ok(iter) = VertexAttribute::iter::<T>(&attrib.attribute) {
+        iter.for_each(|x| x.write_bytes(data));
+    } else {
+        eprintln!(
+            "WARNING: Unsupported color coordinate attribute: \"{:?}\". Skipping...",
+            (attrib.name.as_str(), attrib.type_)
+        );
+    }
+}
