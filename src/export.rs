@@ -120,7 +120,7 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh, AttribTransfer)>, quiet: bool
                 ..
             } = *out.last_mut().unwrap();
             if mesh.num_vertices() == next_mesh.num_vertices()
-                && next_mesh.indices == mesh.indices
+                && mesh.indices == next_mesh.indices
                 && name == &next_name
                 && attrib_transfer.3 == next_attrib_transfer.3
             // same material
@@ -247,7 +247,7 @@ pub(crate) fn export(
         let color_attrib_acc_indices: Vec<_> = attrib_transfer
             .1
             .iter()
-            .map(|attrib| {
+            .filter_map(|attrib| {
                 let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
                 let num_bytes = match attrib.type_ {
                     Type::Vec3(ComponentType::U8 ) => mem::size_of::<[u8 ; 3]>(),
@@ -290,7 +290,7 @@ pub(crate) fn export(
 
                 let attrib_acc_index = accessors.len() as u32;
                 accessors.push(attrib_acc);
-                attrib_acc_index
+                Some(attrib_acc_index)
             })
             .collect();
 
@@ -370,6 +370,7 @@ pub(crate) fn export(
 
         let (animation, targets) =
             build_animation(first_frame, &morphs, nodes.len(), &mut accessors, &mut buffer_views, &mut data, time_step, quiet, &mut pb);
+
         if let Some(animation) = animation {
             animations.push(animation);
         }
@@ -386,7 +387,7 @@ pub(crate) fn export(
                     attrib_transfer.1.iter().zip(color_attrib_acc_indices.iter()).enumerate()
                 {
                     map.insert(
-                        Valid(json::mesh::Semantic::Colors(id)),
+                        Valid(json::mesh::Semantic::Colors(id as u32)),
                         json::Index::new(attrib_acc_index),
                     );
                 }

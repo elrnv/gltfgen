@@ -64,6 +64,7 @@ fn box_rotate_attribs() -> Result<(), Error> {
         .arg("-x").arg("(image: Embed(\"./assets/checker16.png\"))")
         .arg("-u").arg("{\"uv\": f32}")
         .arg("-a").arg("{\"pressure\": f32}")
+        .arg("-c").arg("{\"Cd\": vec3(f32)}")
         .arg("-m").arg("(name:\"checkerboard\")")
         .assert()
         .stderr(b"" as &[u8]) // No errors
@@ -84,6 +85,7 @@ fn box_rotate_attribs_gltf() -> Result<(), Error> {
         .arg("-x").arg("(image: Embed(\"./assets/checker16.png\"))")
         .arg("-u").arg("{\"uv\": f32}")
         .arg("-a").arg("{\"pressure\": f32}")
+        .arg("-c").arg("{\"Cd\": vec3(f32)}")
         .arg("-m").arg("(name:\"checkerboard\")")
         .assert()
         .stderr(b"" as &[u8]) // No errors

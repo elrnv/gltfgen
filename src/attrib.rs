@@ -33,6 +33,16 @@ pub(crate) fn clean_attributes(
     material_attribute: &str,
 ) -> AttribTransfer {
     // First we remove all attributes we want to keep.
+    let tex_attribs_to_keep: Vec<_> = tex_attributes
+        .0
+        .iter()
+        .enumerate()
+        .filter_map(|(id, attrib)| {
+            promote_and_remove_texture_coordinate_attribute(mesh, attrib, id)
+        })
+        .collect();
+    // It is important that these follow the tex attrib function since that can change mesh
+    // topology.
     let attribs_to_keep: Vec<_> = attributes
         .0
         .iter()
@@ -42,14 +52,6 @@ pub(crate) fn clean_attributes(
         .0
         .iter()
         .filter_map(|attrib| remove_attribute(mesh, attrib))
-        .collect();
-    let tex_attribs_to_keep: Vec<_> = tex_attributes
-        .0
-        .iter()
-        .enumerate()
-        .filter_map(|(id, attrib)| {
-            promote_and_remove_texture_coordinate_attribute(mesh, attrib, id)
-        })
         .collect();
 
     // Compute the material index for this mesh.
