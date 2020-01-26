@@ -41,7 +41,8 @@ impl BufferViewBuilder for json::buffer::View {
 }
 
 pub(crate) trait AccessorBuilder {
-    fn new(buf_view: usize, count: usize, generic_comp: GltfComponentType) -> json::Accessor;
+    fn new(count: usize, generic_comp: GltfComponentType) -> json::Accessor;
+    fn with_buffer_view(self, buffer_view: usize) -> json::Accessor;
     fn with_type(self, type_: GltfType) -> json::Accessor;
     fn with_component_type(
         self,
@@ -61,7 +62,6 @@ pub(crate) trait AccessorBuilder {
 impl AccessorBuilder for json::Accessor {
     /// Assumes scalar type.
     fn new(
-        buf_view: usize,
         count: usize,
         generic_component_type: GltfComponentType,
     ) -> json::Accessor {
@@ -69,7 +69,7 @@ impl AccessorBuilder for json::Accessor {
         //       we need to replace `buffer_view` below with an Option.
         //       Probably still Some(..) since blender doesn't support proper sparse accessors.
         json::Accessor {
-            buffer_view: json::Index::new(buf_view as u32).into(),
+            buffer_view: None,
             byte_offset: 0,
             count: count as u32,
             component_type: Valid(json::accessor::GenericComponentType(generic_component_type)),
@@ -83,6 +83,11 @@ impl AccessorBuilder for json::Accessor {
             sparse: None,
         }
     }
+    fn with_buffer_view(mut self, buf_view: usize) -> json::Accessor {
+        self.buffer_view = Some(json::Index::new(buf_view as u32));
+        self
+    }
+
     fn with_type(mut self, type_: GltfType) -> json::Accessor {
         self.type_ = Valid(type_);
         self

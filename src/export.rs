@@ -210,7 +210,8 @@ pub(crate) fn export(
             }
         }
 
-        let idx_acc = json::Accessor::new(buffer_views.len(), num_indices, GltfComponentType::U32)
+        let idx_acc = json::Accessor::new(num_indices, GltfComponentType::U32)
+            .with_buffer_view(buffer_views.len())
             .with_min_max(&[0][..], &[max_index][..]);
 
         buffer_views.push(indices_view);
@@ -233,10 +234,10 @@ pub(crate) fn export(
         }
 
         let pos_acc = json::Accessor::new(
-            pos_view_index,
             vertex_positions.len(),
             GltfComponentType::F32,
         )
+        .with_buffer_view(pos_view_index)
         .with_type(GltfType::Vec3)
         .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
 
@@ -285,7 +286,8 @@ pub(crate) fn export(
 
                 let (type_, component_type) = attrib.type_.into();
                 let attrib_acc =
-                    json::Accessor::new(attrib_view_index, attrib.attribute.len(), component_type)
+                    json::Accessor::new(attrib.attribute.len(), component_type)
+                        .with_buffer_view(attrib_view_index)
                         .with_type(type_);
 
                 let attrib_acc_index = accessors.len() as u32;
@@ -312,7 +314,8 @@ pub(crate) fn export(
 
                 let (type_, component_type) = attrib.type_.into();
                 let attrib_acc =
-                    json::Accessor::new(attrib_view_index, attrib.attribute.len(), component_type)
+                    json::Accessor::new(attrib.attribute.len(), component_type)
+                        .with_buffer_view(attrib_view_index)
                         .with_type(type_);
 
                 let attrib_acc_index = accessors.len() as u32;
@@ -357,10 +360,10 @@ pub(crate) fn export(
             buffer_views.push(attrib_view);
 
             let attrib_acc = json::Accessor::new(
-                attrib_view_index,
                 attrib.attribute.len(),
                 attrib.component_type.into(),
             )
+            .with_buffer_view(attrib_view_index)
             .with_type(GltfType::Vec2);
 
             let attrib_acc_index = accessors.len() as u32;

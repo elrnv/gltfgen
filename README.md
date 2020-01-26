@@ -69,8 +69,10 @@ Alternatively, you may produce the same result by specifying the number of frame
    pattern.
  - Skip frames with `-s` flag to reduce file size and improve performance.
  - Images textures can be referenced or embedded directly into the glTF file.
- - Full support for transferring vertex attributes.
- - Full support for texture coordinate attributes.
+ - Full support for
+    - color attributes,
+    - texture attributes,
+    - custom attributes,
  - Full support for textures.
  - Material attribute on vtk primitives is used to reference specific materials
    provided on the command line.

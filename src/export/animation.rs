@@ -64,10 +64,10 @@ pub(crate) fn build_animation<T: Write>(
 
     // Weights accessor for all frames
     let weights_acc = json::Accessor::new(
-        initial_weights_view_index,
         num_animation_frames * morphs.len(),
         GltfComponentType::F32,
     )
+    .with_buffer_view(initial_weights_view_index)
     .with_min_max(&[0.0][..], &[1.0][..])
     .with_sparse(morphs.len(), weight_indices_view_index, weight_view_index);
 
@@ -92,10 +92,10 @@ pub(crate) fn build_animation<T: Write>(
     buffer_views.push(time_view);
 
     let time_acc = json::Accessor::new(
-        time_view_index,
         num_animation_frames,
         GltfComponentType::F32,
     )
+    .with_buffer_view(time_view_index)
     .with_min_max(&[min_time][..], &[max_time][..]);
 
     let time_acc_index = accessors.len() as u32;
@@ -122,7 +122,8 @@ pub(crate) fn build_animation<T: Write>(
         }
 
         let disp_acc =
-            json::Accessor::new(disp_view_index, displacements.len(), GltfComponentType::F32)
+            json::Accessor::new(displacements.len(), GltfComponentType::F32)
+                .with_buffer_view(disp_view_index)
                 .with_type(GltfType::Vec3)
                 .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
         let disp_acc_index = accessors.len() as u32;
