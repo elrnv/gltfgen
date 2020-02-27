@@ -36,16 +36,17 @@ To generate an animated binary glTF file named `output.glb` in the current direc
 > gltfgen output.glb "./meshes/animation_#.vtk"
 ```
 
-This will assume a time step of 1 second between frames. To specify a time step like 0.01 seconds between frames, use
-
-```
-> gltfgen -t 0.01 output.glb "./meshes/animation_#.vtk"
-```
-
-Alternatively, you may produce the same result by specifying the number of frames per second (FPS) using
+This will assume 24 frames per second (FPS). You can specify FPS manually with the `-f` option as
+follows:
 
 ```
 > gltfgen -f 100 output.glb "./meshes/animation_#.vtk"
+```
+
+Alternatively, to specify a time step like 0.01 seconds between frames, use the `-t` option:
+
+```
+> gltfgen -t 0.01 output.glb "./meshes/animation_#.vtk"
 ```
 
 
