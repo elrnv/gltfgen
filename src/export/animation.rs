@@ -19,9 +19,9 @@ pub(crate) fn build_animation<T: Write>(
     time_step: f32,
     quiet: bool,
     pb: &mut ProgressBar<T>,
-) -> (Option<json::Animation>, Option<Vec<json::mesh::MorphTarget>>) {
+) -> Option<(json::animation::Channel, json::animation::Sampler, Vec<json::mesh::MorphTarget>)> {
     if morphs.is_empty() {
-        return (None, None);
+        return None;
     }
 
     let mut targets = Vec::new();
@@ -156,14 +156,6 @@ pub(crate) fn build_animation<T: Write>(
         extensions: Default::default(),
         extras: Default::default(),
     };
-    (
-        Some(json::Animation {
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            channels: vec![channel],
-            samplers: vec![sampler],
-        }),
-        Some(targets),
-    )
+
+    Some((channel, sampler, targets))
 }

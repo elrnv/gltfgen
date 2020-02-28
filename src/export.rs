@@ -177,7 +177,8 @@ pub(crate) fn export(
     let mut buffer_views = Vec::new();
     let mut meshes = Vec::new();
     let mut nodes = Vec::new();
-    let mut animations = Vec::new();
+    let mut animation_channels = Vec::new();
+    let mut animation_samplers = Vec::new();
     let mut data = Vec::<u8>::new();
 
     for Node {
@@ -371,12 +372,12 @@ pub(crate) fn export(
             Some(attrib_acc_index)
         }).collect();
 
-        let (animation, targets) =
-            build_animation(first_frame, &morphs, nodes.len(), &mut accessors, &mut buffer_views, &mut data, time_step, quiet, &mut pb);
-
-        if let Some(animation) = animation {
-            animations.push(animation);
-        }
+        let targets = build_animation(first_frame, &morphs, nodes.len(), &mut accessors, &mut buffer_views, &mut data, time_step, quiet, &mut pb)
+            .map(|(channel, sampler, targets)| {
+                animation_channels.push(channel);
+                animation_samplers.push(sampler);
+                targets
+            });
 
         let primitives = vec![json::mesh::Primitive {
             attributes: {
@@ -456,6 +457,14 @@ pub(crate) fn export(
             weights: None,
         });
     }
+
+    let animation = json::Animation {
+        extensions: Default::default(),
+        extras: Default::default(),
+        name: None,
+        channels: animation_channels,
+        samplers: animation_samplers,
+    };
 
     // Populate images, samplers and textures
     let mut samplers = Vec::new();
@@ -636,7 +645,7 @@ pub(crate) fn export(
             generator: Some(format!("gltfgen v{}", structopt::clap::crate_version!())),
             ..Default::default()
         },
-        animations,
+        animations: vec![animation],
         accessors,
         buffers: vec![buffer],
         buffer_views,
