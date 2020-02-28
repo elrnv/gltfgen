@@ -5,7 +5,7 @@ authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 edition = "2018"
 
 description = "Command line tool for generating glTF 2.0 animations from numbered sequences of mesh files."
-documentation = "https://docs.rs/gltfgen"
+documentation = "https://github.com/elrnv/gltfgen"
 repository = "https://github.com/elrnv/gltfgen"
 homepage = "https://github.com/elrnv/gltfgen"
 readme = "README.md"

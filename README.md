@@ -3,7 +3,6 @@
 A command line tool for generating glTF 2.0 animations from numbered sequences of mesh files.
 
 [![On crates.io](https://img.shields.io/crates/v/gltfgen.svg)](https://crates.io/crates/gltfgen)
-[![On docs.rs](https://docs.rs/gltfgen/badge.svg)](https://docs.rs/gltfgen/)
 [![Build status](https://travis-ci.org/elrnv/gltfgen.svg?branch=master)](https://travis-ci.org/elrnv/gltfgen)
 
 
