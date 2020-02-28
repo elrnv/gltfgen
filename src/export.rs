@@ -458,12 +458,16 @@ pub(crate) fn export(
         });
     }
 
-    let animation = json::Animation {
-        extensions: Default::default(),
-        extras: Default::default(),
-        name: None,
-        channels: animation_channels,
-        samplers: animation_samplers,
+    let animations = if !animation_channels.is_empty() {
+        vec![json::Animation {
+            extensions: Default::default(),
+            extras: Default::default(),
+            name: None,
+            channels: animation_channels,
+            samplers: animation_samplers,
+        }]
+    } else {
+        vec![]
     };
 
     // Populate images, samplers and textures
@@ -645,7 +649,7 @@ pub(crate) fn export(
             generator: Some(format!("gltfgen v{}", structopt::clap::crate_version!())),
             ..Default::default()
         },
-        animations: vec![animation],
+        animations,
         accessors,
         buffers: vec![buffer],
         buffer_views,
