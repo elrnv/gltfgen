@@ -74,7 +74,12 @@ pub(crate) fn clean_attributes(
 
     // Instead of reinserting back into the mesh, we keep this outside the mesh so we can
     // determine the type of the attribute.
-    (attribs_to_keep, color_attribs_to_keep, tex_attribs_to_keep, material_id)
+    (
+        attribs_to_keep,
+        color_attribs_to_keep,
+        tex_attribs_to_keep,
+        material_id,
+    )
 }
 
 /// Remove the given attribute from the mesh and return it along with its name.
@@ -92,12 +97,19 @@ fn remove_attribute(mesh: &mut TriMesh<f32>, attrib: (&String, &Type)) -> Option
 /// Try to promote the texture coordinate attribute from `FaceVertex` attribute to `Vertex`
 /// attribute.
 fn try_tex_coord_promote<'a, T>(name: &str, mesh: &'a mut TriMesh<f32>) -> Option<()>
-where T: PartialEq + Clone + std::fmt::Debug + 'static
+where
+    T: PartialEq + Clone + std::fmt::Debug + 'static,
 {
     use gut::mesh::attrib::AttribPromote;
     let err = "Texture coordinate collisions detected. Please report this issue.";
-    mesh.attrib_promote::<[T; 2], _>(name, |a, b| assert_eq!(&*a, b, "{}", err)).ok().map(|_| ())
-        .or_else(|| mesh.attrib_promote::<[T; 3], _>(name, |a, b| assert_eq!(&*a, b, "{}", err)).ok().map(|_| ()))
+    mesh.attrib_promote::<[T; 2], _>(name, |a, b| assert_eq!(&*a, b, "{}", err))
+        .ok()
+        .map(|_| ())
+        .or_else(|| {
+            mesh.attrib_promote::<[T; 3], _>(name, |a, b| assert_eq!(&*a, b, "{}", err))
+                .ok()
+                .map(|_| ())
+        })
 }
 
 /// Promote the given attribute to a vertex attribute by splitting the vertex positions for

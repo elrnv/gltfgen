@@ -1,13 +1,13 @@
+use super::builders::*;
 use byteorder::{WriteBytesExt, LE};
 use gltf::json;
 use gut::ops::*;
 use json::accessor::ComponentType as GltfComponentType;
 use json::accessor::Type as GltfType;
 use json::validation::Checked::Valid;
-use std::mem;
 use pbr::ProgressBar;
 use std::io::Write;
-use super::builders::*;
+use std::mem;
 
 pub(crate) fn build_animation<T: Write>(
     first_frame: usize,
@@ -19,7 +19,11 @@ pub(crate) fn build_animation<T: Write>(
     time_step: f32,
     quiet: bool,
     pb: &mut ProgressBar<T>,
-) -> Option<(json::animation::Channel, json::animation::Sampler, Vec<json::mesh::MorphTarget>)> {
+) -> Option<(
+    json::animation::Channel,
+    json::animation::Sampler,
+    Vec<json::mesh::MorphTarget>,
+)> {
     if morphs.is_empty() {
         return None;
     }
@@ -53,12 +57,10 @@ pub(crate) fn build_animation<T: Write>(
     }
 
     // Weights accessor for all frames
-    let weights_acc = json::Accessor::new(
-        num_animation_frames * morphs.len(),
-        GltfComponentType::F32,
-    )
-    .with_min_max(&[0.0][..], &[1.0][..])
-    .with_sparse(morphs.len(), weight_indices_view_index, weight_view_index);
+    let weights_acc =
+        json::Accessor::new(num_animation_frames * morphs.len(), GltfComponentType::F32)
+            .with_min_max(&[0.0][..], &[1.0][..])
+            .with_sparse(morphs.len(), weight_indices_view_index, weight_view_index);
 
     let weights_acc_index = accessors.len() as u32;
     accessors.push(weights_acc);
@@ -80,12 +82,9 @@ pub(crate) fn build_animation<T: Write>(
     let time_view_index = buffer_views.len();
     buffer_views.push(time_view);
 
-    let time_acc = json::Accessor::new(
-        num_animation_frames,
-        GltfComponentType::F32,
-    )
-    .with_buffer_view(time_view_index)
-    .with_min_max(&[min_time][..], &[max_time][..]);
+    let time_acc = json::Accessor::new(num_animation_frames, GltfComponentType::F32)
+        .with_buffer_view(time_view_index)
+        .with_min_max(&[min_time][..], &[max_time][..]);
 
     let time_acc_index = accessors.len() as u32;
     accessors.push(time_acc);
@@ -110,11 +109,10 @@ pub(crate) fn build_animation<T: Write>(
             }
         }
 
-        let disp_acc =
-            json::Accessor::new(displacements.len(), GltfComponentType::F32)
-                .with_buffer_view(disp_view_index)
-                .with_type(GltfType::Vec3)
-                .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
+        let disp_acc = json::Accessor::new(displacements.len(), GltfComponentType::F32)
+            .with_buffer_view(disp_view_index)
+            .with_type(GltfType::Vec3)
+            .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
         let disp_acc_index = accessors.len() as u32;
         accessors.push(disp_acc);
 

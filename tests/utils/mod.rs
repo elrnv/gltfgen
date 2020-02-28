@@ -22,7 +22,7 @@ pub(crate) fn assert_eq_gltf(expected: &Gltf, actual: &Gltf) {
         assert_eq!(exp_view.name(), act_view.name());
         assert_eq!(exp_view.target(), act_view.target());
     }
-    
+
     // Accessors
     for (exp_acc, act_acc) in expected.accessors().zip(actual.accessors()) {
         assert_eq!(exp_acc.index(), act_acc.index());
@@ -63,9 +63,12 @@ pub(crate) fn assert_eq_gltf(expected: &Gltf, actual: &Gltf) {
 
             // For some reason the attributes may not be ordered properly. In reality we only care
             // that they are the same, since the order doesn't matter.
-            
+
             for exp_attrib in exp_prim.attributes() {
-                let act_attrib = act_prim.attributes().find(|a| a.1.index() == exp_attrib.1.index()).unwrap();
+                let act_attrib = act_prim
+                    .attributes()
+                    .find(|a| a.1.index() == exp_attrib.1.index())
+                    .unwrap();
                 assert_eq!(exp_attrib.0, act_attrib.0);
                 assert_eq!(exp_attrib.1.index(), act_attrib.1.index());
                 assert_eq!(exp_attrib.1.size(), act_attrib.1.size());

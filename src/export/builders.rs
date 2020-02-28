@@ -61,10 +61,7 @@ pub(crate) trait AccessorBuilder {
 
 impl AccessorBuilder for json::Accessor {
     /// Assumes scalar type.
-    fn new(
-        count: usize,
-        generic_component_type: GltfComponentType,
-    ) -> json::Accessor {
+    fn new(count: usize, generic_component_type: GltfComponentType) -> json::Accessor {
         // TODO: when gltf is updated to support sparse accessors without buffer view pointers,
         //       we need to replace `buffer_view` below with an Option.
         //       Probably still Some(..) since blender doesn't support proper sparse accessors.

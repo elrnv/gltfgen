@@ -234,13 +234,10 @@ pub(crate) fn export(
             }
         }
 
-        let pos_acc = json::Accessor::new(
-            vertex_positions.len(),
-            GltfComponentType::F32,
-        )
-        .with_buffer_view(pos_view_index)
-        .with_type(GltfType::Vec3)
-        .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
+        let pos_acc = json::Accessor::new(vertex_positions.len(), GltfComponentType::F32)
+            .with_buffer_view(pos_view_index)
+            .with_type(GltfType::Vec3)
+            .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
 
         let pos_acc_index = accessors.len() as u32;
         accessors.push(pos_acc);
@@ -252,10 +249,10 @@ pub(crate) fn export(
             .filter_map(|attrib| {
                 let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
                 let num_bytes = match attrib.type_ {
-                    Type::Vec3(ComponentType::U8 ) => mem::size_of::<[u8 ; 3]>(),
+                    Type::Vec3(ComponentType::U8) => mem::size_of::<[u8; 3]>(),
                     Type::Vec3(ComponentType::U16) => mem::size_of::<[u16; 3]>(),
                     Type::Vec3(ComponentType::F32) => mem::size_of::<[f32; 3]>(),
-                    Type::Vec4(ComponentType::U8 ) => mem::size_of::<[u8 ; 4]>(),
+                    Type::Vec4(ComponentType::U8) => mem::size_of::<[u8; 4]>(),
                     Type::Vec4(ComponentType::U16) => mem::size_of::<[u16; 4]>(),
                     Type::Vec4(ComponentType::F32) => mem::size_of::<[f32; 4]>(),
                     t => {
@@ -275,28 +272,38 @@ pub(crate) fn export(
                 buffer_views.push(attrib_view);
 
                 match attrib.type_ {
-                    Type::Vec3(ComponentType::U8 ) => write_color_attribute_data::<[u8 ; 3]>(&mut data, &attrib),
-                    Type::Vec3(ComponentType::U16) => write_color_attribute_data::<[u16; 3]>(&mut data, &attrib),
-                    Type::Vec3(ComponentType::F32) => write_color_attribute_data::<[f32; 3]>(&mut data, &attrib),
-                    Type::Vec4(ComponentType::U8 ) => write_color_attribute_data::<[u8 ; 4]>(&mut data, &attrib),
-                    Type::Vec4(ComponentType::U16) => write_color_attribute_data::<[u16; 4]>(&mut data, &attrib),
-                    Type::Vec4(ComponentType::F32) => write_color_attribute_data::<[f32; 4]>(&mut data, &attrib),
+                    Type::Vec3(ComponentType::U8) => {
+                        write_color_attribute_data::<[u8; 3]>(&mut data, &attrib)
+                    }
+                    Type::Vec3(ComponentType::U16) => {
+                        write_color_attribute_data::<[u16; 3]>(&mut data, &attrib)
+                    }
+                    Type::Vec3(ComponentType::F32) => {
+                        write_color_attribute_data::<[f32; 3]>(&mut data, &attrib)
+                    }
+                    Type::Vec4(ComponentType::U8) => {
+                        write_color_attribute_data::<[u8; 4]>(&mut data, &attrib)
+                    }
+                    Type::Vec4(ComponentType::U16) => {
+                        write_color_attribute_data::<[u16; 4]>(&mut data, &attrib)
+                    }
+                    Type::Vec4(ComponentType::F32) => {
+                        write_color_attribute_data::<[f32; 4]>(&mut data, &attrib)
+                    }
                     // This must have been checked above.
-                    _ => { unreachable!() }
+                    _ => unreachable!(),
                 }
 
                 let (type_, component_type) = attrib.type_.into();
-                let attrib_acc =
-                    json::Accessor::new(attrib.attribute.len(), component_type)
-                        .with_buffer_view(attrib_view_index)
-                        .with_type(type_);
+                let attrib_acc = json::Accessor::new(attrib.attribute.len(), component_type)
+                    .with_buffer_view(attrib_view_index)
+                    .with_type(type_);
 
                 let attrib_acc_index = accessors.len() as u32;
                 accessors.push(attrib_acc);
                 Some(attrib_acc_index)
             })
             .collect();
-
 
         // Push custom vertex attributes to data buffer.
         let attrib_acc_indices: Vec<_> = attrib_transfer
@@ -314,10 +321,9 @@ pub(crate) fn export(
                 call_typed_fn!(attrib.type_ => self::write_attribute_data::<_>(&mut data, &attrib));
 
                 let (type_, component_type) = attrib.type_.into();
-                let attrib_acc =
-                    json::Accessor::new(attrib.attribute.len(), component_type)
-                        .with_buffer_view(attrib_view_index)
-                        .with_type(type_);
+                let attrib_acc = json::Accessor::new(attrib.attribute.len(), component_type)
+                    .with_buffer_view(attrib_view_index)
+                    .with_type(type_);
 
                 let attrib_acc_index = accessors.len() as u32;
                 accessors.push(attrib_acc);
@@ -372,12 +378,22 @@ pub(crate) fn export(
             Some(attrib_acc_index)
         }).collect();
 
-        let targets = build_animation(first_frame, &morphs, nodes.len(), &mut accessors, &mut buffer_views, &mut data, time_step, quiet, &mut pb)
-            .map(|(channel, sampler, targets)| {
-                animation_channels.push(channel);
-                animation_samplers.push(sampler);
-                targets
-            });
+        let targets = build_animation(
+            first_frame,
+            &morphs,
+            nodes.len(),
+            &mut accessors,
+            &mut buffer_views,
+            &mut data,
+            time_step,
+            quiet,
+            &mut pb,
+        )
+        .map(|(channel, sampler, targets)| {
+            animation_channels.push(channel);
+            animation_samplers.push(sampler);
+            targets
+        });
 
         let primitives = vec![json::mesh::Primitive {
             attributes: {
@@ -387,8 +403,11 @@ pub(crate) fn export(
                     json::Index::new(pos_acc_index),
                 );
                 // Color attributes
-                for (id, (Attribute { .. }, &attrib_acc_index)) in
-                    attrib_transfer.1.iter().zip(color_attrib_acc_indices.iter()).enumerate()
+                for (id, (Attribute { .. }, &attrib_acc_index)) in attrib_transfer
+                    .1
+                    .iter()
+                    .zip(color_attrib_acc_indices.iter())
+                    .enumerate()
                 {
                     map.insert(
                         Valid(json::mesh::Semantic::Colors(id as u32)),
@@ -419,17 +438,16 @@ pub(crate) fn export(
             extensions: Default::default(),
             extras: Default::default(),
             indices: Some(json::Index::new(idx_acc_index)),
-            material: 
-                attrib_transfer.3.and_then(|m| {
-                    // Only assign a material index if it actually exists.
-                    // A material attribute may be present without the user realizing or wanting to
-                    // attach a material, but this shouldn't produce an invalid glTF file.
-                    if m < materials.len() as u32 {
-                        Some(json::Index::new(m))
-                    } else {
-                        None
-                    }
-                }),
+            material: attrib_transfer.3.and_then(|m| {
+                // Only assign a material index if it actually exists.
+                // A material attribute may be present without the user realizing or wanting to
+                // attach a material, but this shouldn't produce an invalid glTF file.
+                if m < materials.len() as u32 {
+                    Some(json::Index::new(m))
+                } else {
+                    None
+                }
+            }),
             mode: Valid(json::mesh::Mode::Triangles),
             targets,
         }];
@@ -633,12 +651,17 @@ pub(crate) fn export(
         name: None,
         uri: match &output {
             Output::Binary { .. } => None,
-            Output::Standard { binary_path, .. } => Some(
-                format!("./{}", binary_path.file_name()
-                        .expect(&format!("ERROR: Invalid binary path: {}", binary_path.display()))
-                        .to_str()
-                        .expect("ERROR: Path is not valid UTF-8"))
-            ),
+            Output::Standard { binary_path, .. } => Some(format!(
+                "./{}",
+                binary_path
+                    .file_name()
+                    .expect(&format!(
+                        "ERROR: Invalid binary path: {}",
+                        binary_path.display()
+                    ))
+                    .to_str()
+                    .expect("ERROR: Path is not valid UTF-8")
+            )),
         },
     };
 

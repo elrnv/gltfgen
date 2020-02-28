@@ -1,5 +1,5 @@
 use assert_cmd::Command;
-use gltf::{Gltf, Error};
+use gltf::{Error, Gltf};
 
 mod utils;
 use utils::*;
@@ -9,7 +9,8 @@ fn box_triangulated() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     cmd.arg("./tests/artifacts/box_triangulated.glb")
         .arg("./assets/{box_triangulated}.vtk")
-        .arg("-a").arg("{\"pressure\": f32}")
+        .arg("-a")
+        .arg("{\"pressure\": f32}")
         .assert()
         .stderr(b"" as &[u8]) // No errors
         .success();
@@ -42,9 +43,12 @@ fn box_rotate() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     cmd.arg("./tests/artifacts/box_rotate.glb")
         .arg("./assets/{box_rotate}_#.vtk")
-        .arg("-x").arg("(image: Embed(\"./assets/checker16.png\"))")
-        .arg("-u").arg("{\"uv\": f32}")
-        .arg("-m").arg("(name:\"checkerboard\")")
+        .arg("-x")
+        .arg("(image: Embed(\"./assets/checker16.png\"))")
+        .arg("-u")
+        .arg("{\"uv\": f32}")
+        .arg("-m")
+        .arg("(name:\"checkerboard\")")
         .assert()
         .stderr(b"" as &[u8]) // No errors
         .success();
@@ -61,11 +65,16 @@ fn box_rotate_attribs() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     cmd.arg("./tests/artifacts/box_rotate_pressure.glb")
         .arg("./assets/{box_rotate}_#.vtk")
-        .arg("-x").arg("(image: Embed(\"./assets/checker16.png\"))")
-        .arg("-u").arg("{\"uv\": f32}")
-        .arg("-a").arg("{\"pressure\": f32}")
-        .arg("-c").arg("{\"Cd\": vec3(f32)}")
-        .arg("-m").arg("(name:\"checkerboard\")")
+        .arg("-x")
+        .arg("(image: Embed(\"./assets/checker16.png\"))")
+        .arg("-u")
+        .arg("{\"uv\": f32}")
+        .arg("-a")
+        .arg("{\"pressure\": f32}")
+        .arg("-c")
+        .arg("{\"Cd\": vec3(f32)}")
+        .arg("-m")
+        .arg("(name:\"checkerboard\")")
         .assert()
         .stderr(b"" as &[u8]) // No errors
         .success();
@@ -82,11 +91,16 @@ fn box_rotate_attribs_gltf() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     cmd.arg("./tests/artifacts/box_rotate_pressure.gltf")
         .arg("./assets/{box_rotate}_#.vtk")
-        .arg("-x").arg("(image: Embed(\"./assets/checker16.png\"))")
-        .arg("-u").arg("{\"uv\": f32}")
-        .arg("-a").arg("{\"pressure\": f32}")
-        .arg("-c").arg("{\"Cd\": vec3(f32)}")
-        .arg("-m").arg("(name:\"checkerboard\")")
+        .arg("-x")
+        .arg("(image: Embed(\"./assets/checker16.png\"))")
+        .arg("-u")
+        .arg("{\"uv\": f32}")
+        .arg("-a")
+        .arg("{\"pressure\": f32}")
+        .arg("-c")
+        .arg("{\"Cd\": vec3(f32)}")
+        .arg("-m")
+        .arg("(name:\"checkerboard\")")
         .assert()
         .stderr(b"" as &[u8]) // No errors
         .success();
@@ -103,7 +117,8 @@ fn tet() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     cmd.arg("./tests/artifacts/tet.glb")
         .arg("./assets/{tet}_#.vtk")
-        .arg("-a").arg("{\"pressure\": f32}")
+        .arg("-a")
+        .arg("{\"pressure\": f32}")
         .assert()
         .stderr(b"" as &[u8]) // No errors
         .success();
