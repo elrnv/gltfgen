@@ -42,16 +42,6 @@ pub(crate) fn build_animation<T: Write>(
     let weight_indices_view_index = buffer_views.len();
     buffer_views.push(weight_indices_view);
 
-    // Initialized weights
-    let byte_length = num_animation_frames * morphs.len() * mem::size_of::<f32>();
-    let initial_weights_view = json::buffer::View::new(byte_length, data.len());
-
-    for _ in 0..(num_animation_frames * morphs.len()) {
-        data.write_f32::<LE>(0.0).unwrap();
-    }
-    let initial_weights_view_index = buffer_views.len();
-    buffer_views.push(initial_weights_view);
-
     // Output animation frames as weights
     let weight_view = json::buffer::View::new(morphs.len() * mem::size_of::<f32>(), data.len());
 
@@ -67,7 +57,6 @@ pub(crate) fn build_animation<T: Write>(
         num_animation_frames * morphs.len(),
         GltfComponentType::F32,
     )
-    .with_buffer_view(initial_weights_view_index)
     .with_min_max(&[0.0][..], &[1.0][..])
     .with_sparse(morphs.len(), weight_indices_view_index, weight_view_index);
 
