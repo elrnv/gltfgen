@@ -397,6 +397,12 @@ pub(crate) fn export(
             targets
         });
 
+        let mode = Valid(if indices.is_some() {
+            json::mesh::Mode::Triangles
+        } else {
+            json::mesh::Mode::Points
+        });
+
         let primitives = vec![json::mesh::Primitive {
             attributes: {
                 let mut map = std::collections::HashMap::new();
@@ -450,7 +456,7 @@ pub(crate) fn export(
                     None
                 }
             }),
-            mode: Valid(json::mesh::Mode::Triangles),
+            mode,
             targets,
         }];
 
