@@ -1,3 +1,4 @@
+use crate::mesh::Mesh;
 use gltf::json;
 use gut::mesh::topology::{FaceIndex, VertexIndex};
 use gut::mesh::TriMesh;
@@ -13,34 +14,48 @@ pub(crate) type AttribTransfer = (
     /*material id*/ Option<u32>,
 );
 
-/// Find a material id in the given mesh by probing a given integer type `I`.
+/// Find a material ID in the given mesh by probing a given integer type `I`.
 fn find_material_id<I: Clone + num_traits::ToPrimitive + 'static>(
-    mesh: &TriMesh<f32>,
+    mesh: &Mesh,
     attrib_name: &str,
 ) -> Option<u32> {
     use gut::mesh::attrib::Attrib;
-    mesh.attrib_iter::<I, FaceIndex>(attrib_name)
-        .ok()
-        .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0)
+    match mesh {
+        Mesh::TriMesh(mesh) => {
+            mesh.attrib_iter::<I, FaceIndex>(attrib_name)
+                .ok()
+                .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0)
+        }
+        Mesh::PointCloud(ptcloud) => {
+            ptcloud.attrib_iter::<I, VertexIndex>(attrib_name)
+                .ok()
+                .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0)
+        }
+    }
 }
 
-/// Cleanup unwanted attributes.
+/// Cleanup unwanted attributes from a given `Mesh`.
 pub(crate) fn clean_attributes(
-    mesh: &mut TriMesh<f32>,
+    mesh: &mut Mesh,
     attributes: &AttributeInfo,
     color_attribs: &AttributeInfo,
     tex_attributes: &TextureAttributeInfo,
     material_attribute: &str,
 ) -> AttribTransfer {
     // First we remove all attributes we want to keep.
-    let tex_attribs_to_keep: Vec<_> = tex_attributes
-        .0
-        .iter()
-        .enumerate()
-        .filter_map(|(id, attrib)| {
-            promote_and_remove_texture_coordinate_attribute(mesh, attrib, id)
-        })
-        .collect();
+    let tex_attribs_to_keep: Vec<_> = if let Mesh::TriMesh(mesh) = mesh {
+        tex_attributes
+            .0
+            .iter()
+            .enumerate()
+            .filter_map(|(id, attrib)| {
+                promote_and_remove_texture_coordinate_attribute(mesh, attrib, id)
+            })
+        .collect()
+    } else {
+        Vec::new()
+    };
+
     // It is important that these follow the tex attrib function since that can change mesh
     // topology.
     let attribs_to_keep: Vec<_> = attributes
@@ -67,10 +82,17 @@ pub(crate) fn clean_attributes(
 
     // Remove all attributes from the mesh.
     // It is important to delete these attributes, because they could cause a huge memory overhead.
-    mesh.vertex_attributes.clear();
-    mesh.face_attributes.clear();
-    mesh.face_vertex_attributes.clear();
-    mesh.face_edge_attributes.clear();
+    match mesh {
+        Mesh::TriMesh(mesh) => {
+            mesh.vertex_attributes.clear();
+            mesh.face_attributes.clear();
+            mesh.face_vertex_attributes.clear();
+            mesh.face_edge_attributes.clear();
+        }
+        Mesh::PointCloud(ptcloud) => {
+            ptcloud.vertex_attributes.clear();
+        }
+    }
 
     // Instead of reinserting back into the mesh, we keep this outside the mesh so we can
     // determine the type of the attribute.
@@ -83,15 +105,17 @@ pub(crate) fn clean_attributes(
 }
 
 /// Remove the given attribute from the mesh and return it along with its name.
-fn remove_attribute(mesh: &mut TriMesh<f32>, attrib: (&String, &Type)) -> Option<Attribute> {
+fn remove_attribute(mesh: &mut Mesh, attrib: (&String, &Type)) -> Option<Attribute> {
     use gut::mesh::attrib::Attrib;
-    mesh.remove_attrib::<VertexIndex>(&attrib.0)
-        .ok()
-        .map(|a| Attribute {
-            name: attrib.0.clone(),
-            type_: *attrib.1,
-            attribute: a,
-        })
+    match mesh {
+        Mesh::TriMesh(mesh) => mesh.remove_attrib::<VertexIndex>(&attrib.0),
+        Mesh::PointCloud(mesh) => mesh.remove_attrib::<VertexIndex>(&attrib.0),
+    }.ok()
+    .map(|a| Attribute {
+        name: attrib.0.clone(),
+        type_: *attrib.1,
+        attribute: a,
+    })
 }
 
 /// Try to promote the texture coordinate attribute from `FaceVertex` attribute to `Vertex`

@@ -1,13 +1,14 @@
 use crate::attrib::*;
 use crate::material::*;
 use crate::texture::*;
+use crate::mesh::Mesh;
 use gltf::json;
 use json::accessor::ComponentType as GltfComponentType;
 use json::accessor::Type as GltfType;
 use std::mem;
 
 use byteorder::{WriteBytesExt, LE};
-use gut::mesh::topology::NumVertices;
+use gut::mesh::PointCloud;
 use gut::mesh::vertex_positions::VertexPositions;
 use gut::ops::*;
 use json::validation::Checked::Valid;
@@ -82,13 +83,13 @@ fn to_padded_byte_vector<T>(vec: Vec<T>) -> Vec<u8> {
 struct Node {
     pub name: String,
     pub first_frame: usize,
-    pub mesh: TriMesh,
+    pub mesh: Mesh,
     pub attrib_transfer: AttribTransfer,
     pub morphs: Vec<(usize, Vec<[f32; 3]>)>,
 }
 
 /// Split a sequence of keyframed trimeshes by changes in topology.
-fn into_nodes(meshes: Vec<(String, usize, TriMesh, AttribTransfer)>, quiet: bool) -> Vec<Node> {
+fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -> Vec<Node> {
     let mut pb = ProgressBar::new(meshes.len() as u64);
 
     if !quiet {
@@ -119,8 +120,7 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh, AttribTransfer)>, quiet: bool
                 ref mut morphs,
                 ..
             } = *out.last_mut().unwrap();
-            if mesh.num_vertices() == next_mesh.num_vertices()
-                && mesh.indices == next_mesh.indices
+            if mesh.eq_topo(&next_mesh)
                 && name == &next_name
                 && attrib_transfer.3 == next_attrib_transfer.3
             // same material
@@ -151,7 +151,7 @@ fn into_nodes(meshes: Vec<(String, usize, TriMesh, AttribTransfer)>, quiet: bool
 }
 
 pub(crate) fn export(
-    mut meshes: Vec<(String, usize, TriMesh, AttribTransfer)>,
+    mut meshes: Vec<(String, usize, Mesh, AttribTransfer)>,
     output: PathBuf,
     time_step: f32,
     quiet: bool,
@@ -191,33 +191,35 @@ pub(crate) fn export(
     {
         let bbox = mesh.bounding_box();
 
-        let TriMesh {
-            vertex_positions,
-            indices,
-            ..
-        } = mesh;
+        let (vertex_positions, indices) = match mesh {
+            Mesh::TriMesh(TriMesh { vertex_positions, indices, .. }) => {
+                // Push indices to data buffer.
+                let num_indices = indices.len() * 3;
+                let byte_length = num_indices * mem::size_of::<u32>();
+                let indices_view = json::buffer::View::new(byte_length, data.len())
+                    .with_target(json::buffer::Target::ElementArrayBuffer);
 
-        // Push indices to data buffer.
-        let num_indices = indices.len() * 3;
-        let byte_length = num_indices * mem::size_of::<u32>();
-        let indices_view = json::buffer::View::new(byte_length, data.len())
-            .with_target(json::buffer::Target::ElementArrayBuffer);
+                let mut max_index = 0;
+                for idx in indices.into_iter() {
+                    for &i in idx.iter() {
+                        max_index = max_index.max(i as u32);
+                        data.write_u32::<LE>(i as u32).unwrap();
+                    }
+                }
 
-        let mut max_index = 0;
-        for idx in indices.into_iter() {
-            for &i in idx.iter() {
-                max_index = max_index.max(i as u32);
-                data.write_u32::<LE>(i as u32).unwrap();
+                let idx_acc = json::Accessor::new(num_indices, GltfComponentType::U32)
+                    .with_buffer_view(buffer_views.len())
+                    .with_min_max(&[0][..], &[max_index][..]);
+
+                buffer_views.push(indices_view);
+                let idx_acc_index = accessors.len() as u32;
+                accessors.push(idx_acc);
+                (vertex_positions, Some(json::Index::new(idx_acc_index)))
             }
-        }
-
-        let idx_acc = json::Accessor::new(num_indices, GltfComponentType::U32)
-            .with_buffer_view(buffer_views.len())
-            .with_min_max(&[0][..], &[max_index][..]);
-
-        buffer_views.push(indices_view);
-        let idx_acc_index = accessors.len() as u32;
-        accessors.push(idx_acc);
+            Mesh::PointCloud(PointCloud { vertex_positions, .. }) => {
+                (vertex_positions, None)
+            }
+        };
 
         // Push positions to data buffer.
         let byte_length = vertex_positions.len() * mem::size_of::<[f32; 3]>();
@@ -437,7 +439,7 @@ pub(crate) fn export(
             },
             extensions: Default::default(),
             extras: Default::default(),
-            indices: Some(json::Index::new(idx_acc_index)),
+            indices,
             material: attrib_transfer.3.and_then(|m| {
                 // Only assign a material index if it actually exists.
                 // A material attribute may be present without the user realizing or wanting to

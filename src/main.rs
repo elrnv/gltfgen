@@ -4,6 +4,7 @@ mod export;
 mod material;
 mod texture;
 mod utils;
+mod mesh;
 
 use attrib::*;
 use material::*;
@@ -13,8 +14,7 @@ use utils::*;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use structopt::StructOpt;
-
-use gut::mesh::TriMesh;
+use mesh::Mesh;
 
 use rayon::prelude::*;
 
@@ -418,21 +418,25 @@ fn main() -> Result<(), Error> {
                 pb.write().unwrap().inc();
             }
             let mut mesh = if let Ok(polymesh) = gut::io::load_polymesh::<f64, _>(&path) {
-                trimesh_f64_to_f32(TriMesh::from(polymesh))
+                polymesh.into()
             } else if let Ok(polymesh) = gut::io::load_polymesh::<f32, _>(&path) {
-                TriMesh::<f32>::from(polymesh)
+                polymesh.into()
             } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f64, _>(&path) {
-                let mut trimesh = tetmesh.surface_trimesh();
+                let mut mesh = Mesh::from(tetmesh);
                 if opt.invert_tets {
-                    trimesh.reverse();
+                    mesh.reverse();
                 }
-                trimesh_f64_to_f32(trimesh)
-            } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f32, _>(path) {
-                let mut trimesh = tetmesh.surface_trimesh();
+                mesh
+            } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f32, _>(&path) {
+                let mut mesh = Mesh::from(tetmesh);
                 if opt.invert_tets {
-                    trimesh.reverse();
+                    mesh.reverse();
                 }
-                trimesh
+                mesh
+            } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f64, _>(&path) {
+                ptcloud.into()
+            } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f32, _>(&path) {
+                ptcloud.into()
             } else {
                 return None;
             };
@@ -452,6 +456,7 @@ fn main() -> Result<(), Error> {
             Some((name, frame, mesh, attrib_transfer))
         })
         .collect();
+
     if !opt.quiet {
         pb.write().unwrap().finish();
     }
@@ -468,6 +473,7 @@ fn main() -> Result<(), Error> {
     if !opt.quiet {
         println!("Exporting glTF...");
     }
+
     export::export(
         meshes,
         opt.output,
@@ -481,3 +487,4 @@ fn main() -> Result<(), Error> {
     }
     Ok(())
 }
+

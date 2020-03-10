@@ -1,29 +1,4 @@
-use gut::mesh::TriMesh;
 use regex::Regex;
-
-pub fn trimesh_f64_to_f32(mesh: TriMesh<f64>) -> TriMesh<f32> {
-    let TriMesh {
-        vertex_positions,
-        indices,
-        vertex_attributes,
-        face_attributes,
-        face_vertex_attributes,
-        face_edge_attributes,
-    } = mesh;
-    TriMesh {
-        vertex_positions: gut::mesh::attrib::IntrinsicAttribute::from_vec(
-            vertex_positions
-                .iter()
-                .map(|&x| [x[0] as f32, x[1] as f32, x[2] as f32])
-                .collect(),
-        ),
-        indices,
-        vertex_attributes,
-        face_attributes,
-        face_vertex_attributes,
-        face_edge_attributes,
-    }
-}
 
 pub fn glob_to_regex(glob: &str) -> Regex {
     let mut regex = String::from("^");
