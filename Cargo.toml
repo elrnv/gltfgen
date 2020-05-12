@@ -1,6 +1,6 @@
 [package]
 name = "gltfgen"
-version = "0.4.4"
+version = "0.4.5"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 edition = "2018"
 
@@ -10,7 +10,7 @@ repository = "https://github.com/elrnv/gltfgen"
 homepage = "https://github.com/elrnv/gltfgen"
 readme = "README.md"
 license = "MPL-2.0"
-keywords = ["glTF", "VTK", "3D", "asset", "generator"]
+keywords = ["vtk", "obj", "3D", "animation", "generator"]
 
 [dependencies]
 gltf = { version = "0.15", features = ["extras"] }
