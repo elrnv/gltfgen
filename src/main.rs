@@ -1,24 +1,12 @@
-#[macro_use]
-mod attrib;
-mod export;
-mod material;
-mod texture;
-mod utils;
-mod mesh;
-
-use attrib::*;
-use material::*;
-use texture::*;
-use utils::*;
-
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use structopt::StructOpt;
-use mesh::Mesh;
 
 use rayon::prelude::*;
 
 use snafu::Snafu;
+
+use gltfgen::*;
 
 const ABOUT: &str = "
 gltfgen generates gltf files in standard and binary formats from a given sequence of mesh files.";
@@ -411,51 +399,17 @@ fn main() -> Result<(), Error> {
         pb.write().unwrap().message("Building Meshes ")
     }
 
-    let meshes: Vec<_> = mesh_meta
-        .into_par_iter()
-        .filter_map(|(name, frame, path)| {
-            if !opt.quiet {
-                pb.write().unwrap().inc();
-            }
-            let mut mesh = if let Ok(polymesh) = gut::io::load_polymesh::<f64, _>(&path) {
-                polymesh.into()
-            } else if let Ok(polymesh) = gut::io::load_polymesh::<f32, _>(&path) {
-                polymesh.into()
-            } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f64, _>(&path) {
-                let mut mesh = Mesh::from(tetmesh);
-                if opt.invert_tets {
-                    mesh.reverse();
-                }
-                mesh
-            } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f32, _>(&path) {
-                let mut mesh = Mesh::from(tetmesh);
-                if opt.invert_tets {
-                    mesh.reverse();
-                }
-                mesh
-            } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f64, _>(&path) {
-                ptcloud.into()
-            } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f32, _>(&path) {
-                ptcloud.into()
-            } else {
-                return None;
-            };
+    let config = LoadConfig {
+        attributes: &opt.attributes,
+        colors: &opt.colors,
+        texcoords: &opt.texcoords,
+        material_attribute: &opt.material_attribute,
+        reverse: opt.reverse,
+        invert_tets: opt.invert_tets
+    };
 
-            if opt.reverse {
-                mesh.reverse();
-            }
-
-            let attrib_transfer = clean_attributes(
-                &mut mesh,
-                &opt.attributes,
-                &opt.colors,
-                &opt.texcoords,
-                &opt.material_attribute,
-            );
-
-            Some((name, frame, mesh, attrib_transfer))
-        })
-        .collect();
+    // Load all meshes with the appropriate conversions and attribute transfers.
+    let meshes = load_meshes(mesh_meta, config, || if !opt.quiet { pb.write().unwrap().inc(); });
 
     if !opt.quiet {
         pb.write().unwrap().finish();

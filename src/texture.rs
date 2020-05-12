@@ -120,7 +120,7 @@ impl Default for WrappingMode {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
-pub(crate) struct TextureInfo {
+pub struct TextureInfo {
     pub image: ImageInfo,
     #[serde(default)]
     pub wrap_s: WrappingMode,
@@ -133,7 +133,7 @@ pub(crate) struct TextureInfo {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
-pub(crate) enum ImageInfo {
+pub enum ImageInfo {
     Uri(String),
     Embed(String),
 }

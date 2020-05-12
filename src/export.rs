@@ -150,7 +150,7 @@ fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -
     out
 }
 
-pub(crate) fn export(
+pub fn export(
     mut meshes: Vec<(String, usize, Mesh, AttribTransfer)>,
     output: PathBuf,
     time_step: f32,
@@ -249,7 +249,6 @@ pub(crate) fn export(
             .1
             .iter()
             .filter_map(|attrib| {
-                let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
                 let num_bytes = match attrib.type_ {
                     Type::Vec3(ComponentType::U8) => mem::size_of::<[u8; 3]>(),
                     Type::Vec3(ComponentType::U16) => mem::size_of::<[u16; 3]>(),
@@ -265,6 +264,7 @@ pub(crate) fn export(
                         return None;
                     }
                 };
+                let byte_length = attrib.attribute.len() * num_bytes;
 
                 let attrib_view = json::buffer::View::new(byte_length, data.len())
                     .with_stride(num_bytes)
@@ -312,7 +312,7 @@ pub(crate) fn export(
             .0
             .iter()
             .map(|attrib| {
-                let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
+                let byte_length = attrib.attribute.data.direct_data().unwrap().byte_len();
                 let attrib_view = json::buffer::View::new(byte_length, data.len())
                     .with_stride(call_typed_fn!(attrib.type_ => mem::size_of :: <_>()))
                     .with_target(json::buffer::Target::ArrayBuffer);
@@ -335,7 +335,7 @@ pub(crate) fn export(
 
         // Push texture coordinate attributes to data buffer.
         let tex_attrib_acc_indices: Vec<_> = attrib_transfer.2.iter().filter_map(|attrib| {
-            let byte_length = attrib.attribute.buffer_ref().as_bytes().len();
+            let byte_length = attrib.attribute.data.direct_data().unwrap().byte_len();
             let num_bytes = match attrib.component_type {
                 ComponentType::U8 => mem::size_of::<[u8; 2]>(),
                 ComponentType::U16 => mem::size_of::<[u16; 2]>(),

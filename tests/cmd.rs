@@ -39,6 +39,28 @@ fn box_rotate_simple() -> Result<(), Error> {
 }
 
 #[test]
+fn box_rotate_obj() -> Result<(), Error> {
+    let mut cmd = Command::cargo_bin("gltfgen").unwrap();
+    cmd.arg("./tests/artifacts/box_rotate_obj.glb")
+        .arg("./assets/{box_rotate}_#.obj")
+        .arg("-x")
+        .arg("(image: Embed(\"./assets/checker16.png\"))")
+        .arg("-u")
+        .arg("{\"uv\": f32}")
+        .arg("-m")
+        .arg("(name:\"checkerboard\")")
+        .assert()
+        .stderr(b"" as &[u8]) // No errors
+        .success();
+
+    let expected = Gltf::open("./assets/box_rotate_expected.glb")?;
+    let actual = Gltf::open("./tests/artifacts/box_rotate.glb")?;
+
+    assert_eq_gltf_with_bytes(&expected, &actual);
+    Ok(())
+}
+
+#[test]
 fn box_rotate() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     cmd.arg("./tests/artifacts/box_rotate.glb")

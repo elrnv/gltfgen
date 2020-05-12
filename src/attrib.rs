@@ -5,9 +5,9 @@ use gut::mesh::TriMesh;
 use indexmap::map::IndexMap;
 use serde::Deserialize;
 
-pub(crate) type VertexAttribute = gut::mesh::attrib::Attribute<VertexIndex>;
+pub type VertexAttribute = gut::mesh::attrib::Attribute<VertexIndex>;
 
-pub(crate) type AttribTransfer = (
+pub type AttribTransfer = (
     Vec<Attribute>,
     Vec<Attribute>,
     Vec<TextureAttribute>,
@@ -177,7 +177,7 @@ fn promote_and_remove_texture_coordinate_attribute(
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TextureAttribute {
+pub struct TextureAttribute {
     pub id: u32,
     pub name: String,
     pub component_type: ComponentType,
@@ -185,7 +185,7 @@ pub(crate) struct TextureAttribute {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Attribute {
+pub struct Attribute {
     pub name: String,
     pub type_: Type,
     pub attribute: VertexAttribute,
@@ -254,7 +254,7 @@ macro_rules! call_typed_fn {
  */
 
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-pub(crate) enum ComponentType {
+pub enum ComponentType {
     /// Signed 8-bit integer. Corresponds to `GL_BYTE`.
     #[serde(alias = "i8")]
     I8,
@@ -289,7 +289,7 @@ impl Into<json::accessor::ComponentType> for ComponentType {
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-pub(crate) enum Type {
+pub enum Type {
     /// Signed 8-bit integer. Corresponds to `GL_BYTE`.
     #[serde(alias = "i8")]
     I8,
@@ -372,10 +372,22 @@ impl Into<(json::accessor::Type, json::accessor::ComponentType)> for Type {
 // Note that indexmap is essential here since we want to preserve the order of the texture
 // coordinate attributes since we are using it explicitly in the gltf output.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
-pub(crate) struct TextureAttributeInfo(pub IndexMap<String, ComponentType>);
+pub struct TextureAttributeInfo(pub IndexMap<String, ComponentType>);
+
+impl Default for TextureAttributeInfo {
+    fn default() -> Self {
+        TextureAttributeInfo(IndexMap::new())
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
-pub(crate) struct AttributeInfo(pub IndexMap<String, Type>);
+pub struct AttributeInfo(pub IndexMap<String, Type>);
+
+impl Default for AttributeInfo {
+    fn default() -> Self {
+        AttributeInfo(IndexMap::new())
+    }
+}
 
 impl std::str::FromStr for AttributeInfo {
     type Err = ron::de::Error;

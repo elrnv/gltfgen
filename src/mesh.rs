@@ -3,7 +3,7 @@ use gut::mesh::vertex_positions::VertexPositions;
 use gut::mesh::topology::NumVertices;
 
 /// Supported output mesh types.
-pub(crate) enum Mesh {
+pub enum Mesh {
     TriMesh(TriMesh<f32>),
     PointCloud(PointCloud<f32>),
 }

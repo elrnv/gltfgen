@@ -3,7 +3,8 @@
 A command line tool for generating glTF 2.0 animations from numbered sequences of mesh files.
 
 [![On crates.io](https://img.shields.io/crates/v/gltfgen.svg)](https://crates.io/crates/gltfgen)
-[![Build status](https://travis-ci.org/elrnv/gltfgen.svg?branch=master)](https://travis-ci.org/elrnv/gltfgen)
+[![Travis Build status](https://travis-ci.org/elrnv/gltfgen.svg?branch=master)](https://travis-ci.org/elrnv/gltfgen)
+[![GHA Build status](https://github.com/elrnv/dync/workflows/CI/badge.svg)](https://github.com/elrnv/dync/actions?query=workflow%3ACI)
 
 
 # Usage
@@ -59,6 +60,7 @@ Alternatively, to specify a time step like 0.01 seconds between frames, use the 
 
  - Unstructured Legacy VTK polygon and tetrahedral meshes in double or float format.
    Tetrahedral VTK meshes are converted to triangle meshes on the fly.
+ - Basic wavefront obj files containing polygon meshes (no .mtl support yet).
  - JPEG and PNG image textures are supported.
 
 ## Output Types

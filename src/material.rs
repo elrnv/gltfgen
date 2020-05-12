@@ -5,7 +5,7 @@ use serde::Deserialize;
  */
 
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
-pub(crate) struct TextureRef {
+pub struct TextureRef {
     pub index: u32,
     pub texcoord: u32,
 }
@@ -32,7 +32,7 @@ fn default_roughness() -> f32 {
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
-pub(crate) struct MaterialInfo {
+pub struct MaterialInfo {
     #[serde(default)]
     pub name: String,
     #[serde(default = "default_base_color")]
