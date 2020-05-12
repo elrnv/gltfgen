@@ -56,11 +56,9 @@ pub fn remove_braces(pattern: &str) -> String {
     let mut out_pattern = String::new();
     let mut chars = pattern.chars().peekable();
     while let Some(c) = chars.next() {
-        if c == '\\' {
-            if chars.peek() == Some(&'{') || chars.peek() == Some(&'}') {
-                out_pattern.push(chars.next().unwrap());
-                continue;
-            }
+        if c == '\\' && (chars.peek() == Some(&'{') || chars.peek() == Some(&'}')) {
+            out_pattern.push(chars.next().unwrap());
+            continue;
         }
         if c == '{' || c == '}' {
             continue;

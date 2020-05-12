@@ -21,16 +21,14 @@ fn find_material_id<I: Clone + num_traits::ToPrimitive + 'static>(
 ) -> Option<u32> {
     use gut::mesh::attrib::Attrib;
     match mesh {
-        Mesh::TriMesh(mesh) => {
-            mesh.attrib_iter::<I, FaceIndex>(attrib_name)
-                .ok()
-                .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0)
-        }
-        Mesh::PointCloud(ptcloud) => {
-            ptcloud.attrib_iter::<I, VertexIndex>(attrib_name)
-                .ok()
-                .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0)
-        }
+        Mesh::TriMesh(mesh) => mesh
+            .attrib_iter::<I, FaceIndex>(attrib_name)
+            .ok()
+            .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0),
+        Mesh::PointCloud(ptcloud) => ptcloud
+            .attrib_iter::<I, VertexIndex>(attrib_name)
+            .ok()
+            .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0),
     }
 }
 
@@ -51,7 +49,7 @@ pub(crate) fn clean_attributes(
             .filter_map(|(id, attrib)| {
                 promote_and_remove_texture_coordinate_attribute(mesh, attrib, id)
             })
-        .collect()
+            .collect()
     } else {
         Vec::new()
     };
@@ -110,7 +108,8 @@ fn remove_attribute(mesh: &mut Mesh, attrib: (&String, &Type)) -> Option<Attribu
     match mesh {
         Mesh::TriMesh(mesh) => mesh.remove_attrib::<VertexIndex>(&attrib.0),
         Mesh::PointCloud(mesh) => mesh.remove_attrib::<VertexIndex>(&attrib.0),
-    }.ok()
+    }
+    .ok()
     .map(|a| Attribute {
         name: attrib.0.clone(),
         type_: *attrib.1,
@@ -393,7 +392,7 @@ impl std::str::FromStr for AttributeInfo {
     type Err = ron::de::Error;
     fn from_str(input: &str) -> Result<AttributeInfo, Self::Err> {
         let idx_map: Result<IndexMap<String, Type>, Self::Err> = ron::de::from_str(input);
-        idx_map.map(|m| AttributeInfo(m))
+        idx_map.map(AttributeInfo)
     }
 }
 
@@ -401,7 +400,7 @@ impl std::str::FromStr for TextureAttributeInfo {
     type Err = ron::de::Error;
     fn from_str(input: &str) -> Result<TextureAttributeInfo, Self::Err> {
         let idx_map: Result<IndexMap<String, ComponentType>, Self::Err> = ron::de::from_str(input);
-        idx_map.map(|m| TextureAttributeInfo(m))
+        idx_map.map(TextureAttributeInfo)
     }
 }
 

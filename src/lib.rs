@@ -4,14 +4,14 @@ use std::path::PathBuf;
 pub mod attrib;
 pub mod export;
 pub mod material;
+pub mod mesh;
 pub mod texture;
 pub mod utils;
-pub mod mesh;
 
 pub use attrib::*;
+pub use material::*;
 pub use texture::*;
 pub use utils::*;
-pub use material::*;
 
 use mesh::Mesh;
 
@@ -26,7 +26,11 @@ pub struct LoadConfig<'a> {
     pub invert_tets: bool,
 }
 
-pub fn load_meshes<P: Fn() + Send + Sync>(mesh_meta: Vec<(String, usize, PathBuf)>, config: LoadConfig, progress_inc: P) -> Vec<(String, usize, Mesh, AttribTransfer)> {
+pub fn load_meshes<P: Fn() + Send + Sync>(
+    mesh_meta: Vec<(String, usize, PathBuf)>,
+    config: LoadConfig,
+    progress_inc: P,
+) -> Vec<(String, usize, Mesh, AttribTransfer)> {
     mesh_meta
         .into_par_iter()
         .filter_map(|(name, frame, path)| {
@@ -90,11 +94,13 @@ mod tests {
         //        dbg!(line);
         //    }
         //}
-        
-        let mesh_meta: Vec<_> = (1..=24).map(|frame| {
-            let path = format!("./assets/box_rotate_{}.obj", frame);
-            (String::from("box_rotate"), frame, PathBuf::from(path))
-        }).collect();
+
+        let mesh_meta: Vec<_> = (1..=24)
+            .map(|frame| {
+                let path = format!("./assets/box_rotate_{}.obj", frame);
+                (String::from("box_rotate"), frame, PathBuf::from(path))
+            })
+            .collect();
         //dbg!(&mesh_meta);
 
         let attributes = AttributeInfo::default();

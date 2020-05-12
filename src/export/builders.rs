@@ -189,10 +189,12 @@ pub(crate) fn write_attribute_data<T: WriteBytes + 'static>(
     data: &mut Vec<u8>,
     attrib: &Attribute,
 ) {
-    let iter = VertexAttribute::iter::<T>(&attrib.attribute).expect(&format!(
-        "Unsupported attribute: \"{:?}\"",
-        (attrib.name.as_str(), attrib.type_)
-    ));
+    let iter = VertexAttribute::iter::<T>(&attrib.attribute).unwrap_or_else(|_| {
+        panic!(
+            "Unsupported attribute: \"{:?}\"",
+            (attrib.name.as_str(), attrib.type_)
+        )
+    });
     iter.for_each(|x| x.write_bytes(data));
 }
 

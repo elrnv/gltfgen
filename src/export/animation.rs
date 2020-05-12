@@ -9,6 +9,7 @@ use pbr::ProgressBar;
 use std::io::Write;
 use std::mem;
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn build_animation<T: Write>(
     first_frame: usize,
     morphs: &[(usize, Vec<[f32; 3]>)],
@@ -89,7 +90,7 @@ pub(crate) fn build_animation<T: Write>(
     let time_acc_index = accessors.len() as u32;
     accessors.push(time_acc);
 
-    for (_, displacements) in morphs.into_iter() {
+    for (_, displacements) in morphs.iter() {
         if !quiet {
             pb.inc();
         }

@@ -4,7 +4,7 @@ use structopt::StructOpt;
 
 use rayon::prelude::*;
 
-use snafu::Snafu;
+use thiserror::Error;
 
 use gltfgen::*;
 
@@ -274,26 +274,14 @@ struct Opt {
     material_attribute: String,
 }
 
-#[derive(Debug, Snafu)]
+#[derive(Debug, Error)]
 enum Error {
-    #[snafu(display("{}", src.to_string()))]
-    GlobError { src: glob::GlobError },
-    #[snafu(display("{}", src.to_string()))]
-    GlobPatternError { src: glob::PatternError },
-    /// No valid meshes were found.
+    #[error("{}", .0)]
+    Glob(#[from] glob::GlobError),
+    #[error("{}", .0)]
+    GlobPattern(#[from] glob::PatternError),
+    #[error("No valid meshes were found")]
     NoMeshesFound,
-}
-
-impl From<glob::GlobError> for Error {
-    fn from(src: glob::GlobError) -> Error {
-        Error::GlobError { src }
-    }
-}
-
-impl From<glob::PatternError> for Error {
-    fn from(src: glob::PatternError) -> Error {
-        Error::GlobPatternError { src }
-    }
 }
 
 fn main() -> Result<(), Error> {
@@ -405,11 +393,15 @@ fn main() -> Result<(), Error> {
         texcoords: &opt.texcoords,
         material_attribute: &opt.material_attribute,
         reverse: opt.reverse,
-        invert_tets: opt.invert_tets
+        invert_tets: opt.invert_tets,
     };
 
     // Load all meshes with the appropriate conversions and attribute transfers.
-    let meshes = load_meshes(mesh_meta, config, || if !opt.quiet { pb.write().unwrap().inc(); });
+    let meshes = load_meshes(mesh_meta, config, || {
+        if !opt.quiet {
+            pb.write().unwrap().inc();
+        }
+    });
 
     if !opt.quiet {
         pb.write().unwrap().finish();
@@ -441,4 +433,3 @@ fn main() -> Result<(), Error> {
     }
     Ok(())
 }
-

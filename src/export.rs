@@ -1,15 +1,15 @@
 use crate::attrib::*;
 use crate::material::*;
-use crate::texture::*;
 use crate::mesh::Mesh;
+use crate::texture::*;
 use gltf::json;
 use json::accessor::ComponentType as GltfComponentType;
 use json::accessor::Type as GltfType;
 use std::mem;
 
 use byteorder::{WriteBytesExt, LE};
-use gut::mesh::PointCloud;
 use gut::mesh::vertex_positions::VertexPositions;
+use gut::mesh::PointCloud;
 use gut::ops::*;
 use json::validation::Checked::Valid;
 use pbr::ProgressBar;
@@ -108,7 +108,7 @@ fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -
             morphs: Vec::new(),
         });
 
-        while let Some((next_name, frame, next_mesh, next_attrib_transfer)) = mesh_iter.next() {
+        for (next_name, frame, next_mesh, next_attrib_transfer) in mesh_iter {
             if !quiet {
                 pb.inc();
             }
@@ -192,7 +192,11 @@ pub fn export(
         let bbox = mesh.bounding_box();
 
         let (vertex_positions, indices) = match mesh {
-            Mesh::TriMesh(TriMesh { vertex_positions, indices, .. }) => {
+            Mesh::TriMesh(TriMesh {
+                vertex_positions,
+                indices,
+                ..
+            }) => {
                 // Push indices to data buffer.
                 let num_indices = indices.len() * 3;
                 let byte_length = num_indices * mem::size_of::<u32>();
@@ -216,9 +220,9 @@ pub fn export(
                 accessors.push(idx_acc);
                 (vertex_positions, Some(json::Index::new(idx_acc_index)))
             }
-            Mesh::PointCloud(PointCloud { vertex_positions, .. }) => {
-                (vertex_positions, None)
-            }
+            Mesh::PointCloud(PointCloud {
+                vertex_positions, ..
+            }) => (vertex_positions, None),
         };
 
         // Push positions to data buffer.
@@ -590,7 +594,7 @@ pub fn export(
                 samplers.push(sampler);
 
                 Some(json::texture::Texture {
-                    source: json::Index::new(image_index as u32).into(),
+                    source: json::Index::new(image_index as u32),
                     sampler: json::Index::new(sampler_index as u32).into(),
                     name: None,
                     extensions: Default::default(),
@@ -663,7 +667,7 @@ pub fn export(
                 "./{}",
                 binary_path
                     .file_name()
-                    .expect(&format!(
+                    .unwrap_or_else(|| panic!(
                         "ERROR: Invalid binary path: {}",
                         binary_path.display()
                     ))
@@ -708,7 +712,7 @@ pub fn export(
 
             let glb = gltf::binary::Glb {
                 header: gltf::binary::Header {
-                    magic: b"glTF".clone(),
+                    magic: *b"glTF",
                     version: 2,
                     length: json_offset + align_to_multiple_of_four(data.len() as u32),
                 },

@@ -1,6 +1,6 @@
-use gut::mesh::{TriMesh, PolyMesh, TetMesh, PointCloud};
-use gut::mesh::vertex_positions::VertexPositions;
 use gut::mesh::topology::NumVertices;
+use gut::mesh::vertex_positions::VertexPositions;
+use gut::mesh::{PointCloud, PolyMesh, TetMesh, TriMesh};
 
 /// Supported output mesh types.
 pub enum Mesh {
@@ -10,25 +10,28 @@ pub enum Mesh {
 
 impl Mesh {
     pub fn reverse(&mut self) {
-        match self {
-            Mesh::TriMesh(mesh) => mesh.reverse(),
-            _ => { /* Nothing to reverse */ }
-        }
+        if let Mesh::TriMesh(mesh) = self {
+            mesh.reverse();
+        } /* else: Nothing to reverse */
     }
 
     /// Returns true if the `other` mesh has equivalent topology to `self`.
     pub fn eq_topo(&self, other: &Mesh) -> bool {
         match self {
-            Mesh::TriMesh(self_mesh) => if let Mesh::TriMesh(other_mesh) = other {
-                self_mesh.num_vertices() == other_mesh.num_vertices() &&
-                    self_mesh.indices == other_mesh.indices
-            } else {
-                false
+            Mesh::TriMesh(self_mesh) => {
+                if let Mesh::TriMesh(other_mesh) = other {
+                    self_mesh.num_vertices() == other_mesh.num_vertices()
+                        && self_mesh.indices == other_mesh.indices
+                } else {
+                    false
+                }
             }
-            Mesh::PointCloud(self_pts) => if let Mesh::PointCloud(other_pts) = other {
-                self_pts.num_vertices() == other_pts.num_vertices()
-            } else {
-                false
+            Mesh::PointCloud(self_pts) => {
+                if let Mesh::PointCloud(other_pts) = other {
+                    self_pts.num_vertices() == other_pts.num_vertices()
+                } else {
+                    false
+                }
             }
         }
     }
@@ -126,4 +129,3 @@ pub fn pointcloud_f64_to_f32(ptcloud: PointCloud<f64>) -> PointCloud<f32> {
         vertex_attributes,
     }
 }
-
