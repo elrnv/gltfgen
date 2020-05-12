@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        rust: [stable, nightly]
+
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ matrix.rust }}
+          profile: minimal
+          override: true
+      - name: Build
+        run: cargo build --verbose
+      - name: Test default features
+        run: cargo test --verbose
+      - name: Test all features
+        run: cargo test --all-features --verbose
+
+  clippy:
+    name: "Clippy (stable)"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: clippy
+          override: true
+      - uses: actions-rs/clippy-check@v1
+        with:
+          token: ${{ github.token }}
+
+  rustfmt:
+    name: "Format (stable)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          profile: minimal
+          components: rustfmt
+          override: true
+      - run: cargo fmt -- --check
