@@ -4,7 +4,7 @@ A command line tool for generating glTF 2.0 animations from numbered sequences o
 
 [![On crates.io](https://img.shields.io/crates/v/gltfgen.svg)](https://crates.io/crates/gltfgen)
 [![Travis Build status](https://travis-ci.org/elrnv/gltfgen.svg?branch=master)](https://travis-ci.org/elrnv/gltfgen)
-[![GHA Build status](https://github.com/elrnv/dync/workflows/CI/badge.svg)](https://github.com/elrnv/dync/actions?query=workflow%3ACI)
+[![GHA Build status](https://github.com/elrnv/gltfgen/workflows/CI/badge.svg)](https://github.com/elrnv/gltfgen/actions?query=workflow%3ACI)
 
 
 # Usage
