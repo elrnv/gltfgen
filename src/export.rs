@@ -626,7 +626,7 @@ pub fn export(
                     double_sided: false,
                     pbr_metallic_roughness: json::material::PbrMetallicRoughness {
                         base_color_factor: json::material::PbrBaseColorFactor(*base_color),
-                        base_color_texture: Some(json::texture::Info {
+                        base_color_texture: base_texture.map(|base_texture| json::texture::Info {
                             index: json::Index::new(base_texture.index),
                             tex_coord: base_texture.texcoord,
                             extensions: Default::default(),

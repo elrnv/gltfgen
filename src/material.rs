@@ -10,21 +10,12 @@ pub struct TextureRef {
     pub texcoord: u32,
 }
 
-impl Default for TextureRef {
-    fn default() -> TextureRef {
-        TextureRef {
-            index: 0,
-            texcoord: 0,
-        }
-    }
-}
-
 fn default_base_color() -> [f32; 4] {
     [0.5, 0.5, 0.5, 1.0]
 }
 
 fn default_metallic() -> f32 {
-    0.5
+    0.0
 }
 
 fn default_roughness() -> f32 {
@@ -38,7 +29,7 @@ pub struct MaterialInfo {
     #[serde(default = "default_base_color")]
     pub base_color: [f32; 4],
     #[serde(default)]
-    pub base_texture: TextureRef,
+    pub base_texture: Option<TextureRef>,
     #[serde(default = "default_metallic")]
     pub metallic: f32,
     #[serde(default = "default_roughness")]

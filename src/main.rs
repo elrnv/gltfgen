@@ -244,8 +244,8 @@ struct Opt {
     /// values between 0.0 and 1.0. 'metallic' and 'roughness' factors are
     /// expected to be between 0.0 and 1.0.
     ///
-    /// Default values are 0.5 for 'metallic' and 'roughness' is 0.5, [0.5, 0.5,
-    /// 0.5, 1.0] for 'base_color, and (index: 0, texcoord: 0) for 'texture'.
+    /// Default values are 0.0 for 'metallic', 0.5 for 'roughness', and [0.5, 0.5,
+    /// 0.5, 1.0] for 'base_color.
     ///
     /// EXAMPLES
     ///

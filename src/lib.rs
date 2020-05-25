@@ -82,19 +82,6 @@ mod tests {
 
     #[test]
     fn box_rotate_obj() {
-        //{
-        //    use std::io::{Read, BufRead};
-        //    use std::io::BufReader;
-        //    let f1 = std::fs::File::open("./assets/box_rotate_1.obj").unwrap();
-        //    let f2 = std::fs::File::open("./assets/box_rotate_2.obj").unwrap();
-        //    for line in BufReader::new(f1).lines() {
-        //        dbg!(line);
-        //    }
-        //    for line in BufReader::new(f2).lines() {
-        //        dbg!(line);
-        //    }
-        //}
-
         let mesh_meta: Vec<_> = (1..=24)
             .map(|frame| {
                 let path = format!("./assets/box_rotate_{}.obj", frame);
