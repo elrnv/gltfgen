@@ -395,7 +395,9 @@ pub fn export(
             quiet,
             &mut pb,
         )
-        .map(|(channel, sampler, targets)| {
+        .map(|(mut channel, sampler, targets)| {
+            // Override the sampler index to correspond to the index within the animation_samplers Vec.
+            channel.sampler = json::Index::new(animation_samplers.len() as u32);
             animation_channels.push(channel);
             animation_samplers.push(sampler);
             targets
