@@ -173,6 +173,10 @@ pub fn export(
         pb.message("Constructing glTF    ");
     }
 
+    // First populate materials
+    // Doing this first allows us to attach a default material if one is needed.
+    let mut materials: Vec<_> = materials.into_iter().map(Into::into).collect();
+
     let mut accessors = Vec::new();
     let mut buffer_views = Vec::new();
     let mut meshes = Vec::new();
@@ -384,6 +388,12 @@ pub fn export(
             Some(attrib_acc_index)
         }).collect();
 
+        // If colors or textures were specified but not materials, add a default material.
+        if (!attrib_transfer.1.is_empty() || !attrib_transfer.2.is_empty()) && materials.is_empty()
+        {
+            materials.push(MaterialInfo::default().into());
+        }
+
         let targets = build_animation(
             first_frame,
             &morphs,
@@ -452,16 +462,19 @@ pub fn export(
             extensions: Default::default(),
             extras: Default::default(),
             indices,
-            material: attrib_transfer.3.and_then(|m| {
-                // Only assign a material index if it actually exists.
-                // A material attribute may be present without the user realizing or wanting to
-                // attach a material, but this shouldn't produce an invalid glTF file.
-                if m < materials.len() as u32 {
-                    Some(json::Index::new(m))
+            material: {
+                // Assign the material index only if there are materials there to prevent producing
+                // an invalid gltf.
+                let mtl_id = attrib_transfer.3.unwrap_or(0);
+                if mtl_id < materials.len() as u32 {
+                    Some(json::Index::new(mtl_id))
                 } else {
+                    if attrib_transfer.3.is_some() {
+                        println!("INFO: Material ID was found but no materials were specified.");
+                    }
                     None
                 }
-            }),
+            },
             mode,
             targets,
         }];
@@ -602,51 +615,6 @@ pub fn export(
                     extensions: Default::default(),
                     extras: Default::default(),
                 })
-            },
-        )
-        .collect();
-
-    // Populate materials
-    let materials: Vec<_> = materials
-        .iter()
-        .map(
-            |MaterialInfo {
-                 name,
-                 base_color,
-                 base_texture,
-                 metallic,
-                 roughness,
-             }| {
-                json::Material {
-                    name: if name.is_empty() {
-                        None
-                    } else {
-                        Some(name.to_owned())
-                    },
-                    alpha_cutoff: json::material::AlphaCutoff(0.5),
-                    alpha_mode: Valid(json::material::AlphaMode::Opaque),
-                    double_sided: false,
-                    pbr_metallic_roughness: json::material::PbrMetallicRoughness {
-                        base_color_factor: json::material::PbrBaseColorFactor(*base_color),
-                        base_color_texture: base_texture.map(|base_texture| json::texture::Info {
-                            index: json::Index::new(base_texture.index),
-                            tex_coord: base_texture.texcoord,
-                            extensions: Default::default(),
-                            extras: Default::default(),
-                        }),
-                        metallic_factor: json::material::StrengthFactor(*metallic),
-                        roughness_factor: json::material::StrengthFactor(*roughness),
-                        metallic_roughness_texture: None,
-                        extensions: Default::default(),
-                        extras: Default::default(),
-                    },
-                    normal_texture: None,
-                    occlusion_texture: None,
-                    emissive_texture: None,
-                    emissive_factor: json::material::EmissiveFactor([0.0, 0.0, 0.0]),
-                    extensions: Default::default(),
-                    extras: Default::default(),
-                }
             },
         )
         .collect();
