@@ -1,26 +1,28 @@
-use crate::attrib::*;
-use crate::material::*;
-use crate::mesh::Mesh;
-use crate::texture::*;
+use std::borrow::Cow;
+use std::mem;
+use std::path::PathBuf;
+
+use byteorder::{WriteBytesExt, LE};
 use gltf::json;
 use json::accessor::ComponentType as GltfComponentType;
 use json::accessor::Type as GltfType;
-use std::mem;
+use json::validation::Checked::Valid; // For colouring log messages.
 
-use byteorder::{WriteBytesExt, LE};
 use gut::mesh::vertex_positions::VertexPositions;
 use gut::mesh::PointCloud;
 use gut::ops::*;
-use json::validation::Checked::Valid;
-use pbr::ProgressBar;
-use std::borrow::Cow;
-use std::path::PathBuf;
 
 mod animation;
 mod builders;
 
 use animation::*;
 use builders::*;
+
+use crate::attrib::*;
+use crate::material::*;
+use crate::mesh::Mesh;
+use crate::texture::*;
+use crate::utils::*;
 
 type TriMesh = gut::mesh::TriMesh<f32>;
 
@@ -90,11 +92,8 @@ struct Node {
 
 /// Split a sequence of keyframed trimeshes by changes in topology.
 fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -> Vec<Node> {
-    let mut pb = ProgressBar::new(meshes.len() as u64);
-
-    if !quiet {
-        pb.message("Extracting Animation ");
-    }
+    let pb = new_progress_bar(quiet, meshes.len());
+    pb.set_message("Extracting Animation");
 
     let mut out = Vec::new();
     let mut mesh_iter = meshes.into_iter();
@@ -109,10 +108,7 @@ fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -
         });
 
         for (next_name, frame, next_mesh, next_attrib_transfer) in mesh_iter {
-            if !quiet {
-                pb.inc();
-            }
-
+            pb.tick();
             let Node {
                 ref name,
                 ref mesh,
@@ -144,9 +140,8 @@ fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -
             }
         }
     }
-    if !quiet {
-        pb.finish();
-    }
+
+    pb.finish_with_message("Done extracting animation");
     out
 }
 
@@ -168,10 +163,12 @@ pub fn export(
     let morphed_meshes = into_nodes(meshes, quiet);
 
     let count: u64 = morphed_meshes.iter().map(|m| m.morphs.len() as u64).sum();
-    let mut pb = ProgressBar::new(count);
-    if !quiet {
-        pb.message("Constructing glTF    ");
-    }
+    let pb = new_progress_bar(quiet, count as usize);
+    pb.set_message("Constructing glTF");
+
+    // Keep track of the messages and warnings to be displayed after construction is complete.
+    let mut msgs = Vec::new();
+    let mut warnings = Vec::new();
 
     // First populate materials
     // Doing this first allows us to attach a default material if one is needed.
@@ -265,8 +262,8 @@ pub fn export(
                     Type::Vec4(ComponentType::U16) => mem::size_of::<[u16; 4]>(),
                     Type::Vec4(ComponentType::F32) => mem::size_of::<[f32; 4]>(),
                     t => {
-                        eprintln!(
-                            "WARNING: Invalid color attribute type detected: {:?}. Skipping...",
+                        log!(warnings;
+                            "Invalid color attribute type detected: {:?}. Skipping...",
                             t
                         );
                         return None;
@@ -342,51 +339,55 @@ pub fn export(
             .collect();
 
         // Push texture coordinate attributes to data buffer.
-        let tex_attrib_acc_indices: Vec<_> = attrib_transfer.2.iter().filter_map(|attrib| {
-            let byte_length = attrib.attribute.data.direct_data().unwrap().byte_len();
-            let num_bytes = match attrib.component_type {
-                ComponentType::U8 => mem::size_of::<[u8; 2]>(),
-                ComponentType::U16 => mem::size_of::<[u16; 2]>(),
-                ComponentType::F32 => mem::size_of::<[f32; 2]>(),
-                t => {
-                    eprintln!(
-                        "WARNING: Invalid texture coordinate attribute type detected: {:?}. Skipping...",
-                        t
-                    );
-                    return None;
+        let tex_attrib_acc_indices: Vec<_> = attrib_transfer
+            .2
+            .iter()
+            .filter_map(|attrib| {
+                let byte_length = attrib.attribute.data.direct_data().unwrap().byte_len();
+                let num_bytes = match attrib.component_type {
+                    ComponentType::U8 => mem::size_of::<[u8; 2]>(),
+                    ComponentType::U16 => mem::size_of::<[u16; 2]>(),
+                    ComponentType::F32 => mem::size_of::<[f32; 2]>(),
+                    t => {
+                        log!(warnings;
+                            "Invalid texture coordinate attribute type detected: {:?}. Skipping...",
+                            t
+                        );
+                        return None;
+                    }
+                };
+                let orig_data_len = data.len();
+
+                // First let's try to write the data to flush out any problems before appending the
+                // buffer view. This way we can bail early without having to roll back state.
+                match attrib.component_type {
+                    ComponentType::U8 => write_tex_attribute_data::<u8>(&mut data, &attrib),
+                    ComponentType::U16 => write_tex_attribute_data::<u16>(&mut data, &attrib),
+                    ComponentType::F32 => write_tex_attribute_data::<f32>(&mut data, &attrib),
+                    // Other cases must have caused a return in the match above.
+                    _ => {
+                        unreachable!()
+                    }
                 }
-            };
-            let orig_data_len = data.len();
 
-            // First let's try to write the data to flush out any problems before appending the
-            // buffer view. This way we can bail early without having to roll back state.
-            match attrib.component_type {
-                ComponentType::U8 => write_tex_attribute_data::<u8>(&mut data, &attrib),
-                ComponentType::U16 => write_tex_attribute_data::<u16>(&mut data, &attrib),
-                ComponentType::F32 => write_tex_attribute_data::<f32>(&mut data, &attrib),
-                // Other cases must have caused a return in the match above.
-                _ => { unreachable!() }
-            }
+                // Everything seems ok, continue with building the json structure.
+                let attrib_view = json::buffer::View::new(byte_length, orig_data_len)
+                    .with_stride(num_bytes)
+                    .with_target(json::buffer::Target::ArrayBuffer);
 
-            // Everything seems ok, continue with building the json structure.
-            let attrib_view = json::buffer::View::new(byte_length, orig_data_len)
-                .with_stride(num_bytes)
-                .with_target(json::buffer::Target::ArrayBuffer);
+                let attrib_view_index = buffer_views.len();
+                buffer_views.push(attrib_view);
 
-            let attrib_view_index = buffer_views.len();
-            buffer_views.push(attrib_view);
+                let attrib_acc =
+                    json::Accessor::new(attrib.attribute.len(), attrib.component_type.into())
+                        .with_buffer_view(attrib_view_index)
+                        .with_type(GltfType::Vec2);
 
-            let attrib_acc = json::Accessor::new(
-                attrib.attribute.len(),
-                attrib.component_type.into(),
-            )
-            .with_buffer_view(attrib_view_index)
-            .with_type(GltfType::Vec2);
-
-            let attrib_acc_index = accessors.len() as u32;
-            accessors.push(attrib_acc);
-            Some(attrib_acc_index)
-        }).collect();
+                let attrib_acc_index = accessors.len() as u32;
+                accessors.push(attrib_acc);
+                Some(attrib_acc_index)
+            })
+            .collect();
 
         // If colors or textures were specified but not materials, add a default material.
         if (!attrib_transfer.1.is_empty() || !attrib_transfer.2.is_empty()) && materials.is_empty()
@@ -402,8 +403,7 @@ pub fn export(
             &mut buffer_views,
             &mut data,
             time_step,
-            quiet,
-            &mut pb,
+            &pb,
         )
         .map(|(mut channel, sampler, targets)| {
             // Override the sampler index to correspond to the index within the animation_samplers Vec.
@@ -470,7 +470,7 @@ pub fn export(
                     Some(json::Index::new(mtl_id))
                 } else {
                     if attrib_transfer.3.is_some() {
-                        println!("INFO: Material ID was found but no materials were specified.");
+                        log!(msgs; "Material ID was found but no materials were specified.");
                     }
                     None
                 }
@@ -550,8 +550,8 @@ pub fn export(
                                 });
 
                         if mime_type.is_none() {
-                            eprintln!(
-                                "WARNING: Image must be in png or jpg format: {:?}. Skipping...",
+                            log!(warnings;
+                                "Image must be in png or jpg format: {:?}. Skipping...",
                                 &path
                             );
                             return None;
@@ -581,14 +581,17 @@ pub fn export(
                             } else {
                                 // Truncate the data vec back to original size to avoid corruption.
                                 data.resize(orig_len, 0);
-                                eprintln!(
-                                    "WARNING: Failed to read image: {:?}. Skipping...",
+                                log!(warnings;
+                                    "Failed to read image: {:?}. Skipping...",
                                     &path
                                 );
                                 return None;
                             }
                         } else {
-                            eprintln!("WARNING: Failed to read image: {:?}. Skipping...", &path);
+                            log!(warnings;
+                                "Failed to read image: {:?}. Skipping...",
+                                &path
+                            );
                             return None;
                         }
                     }
@@ -619,10 +622,11 @@ pub fn export(
         )
         .collect();
 
-    if !quiet {
-        pb.finish();
-        println!("Writing glTF to File...");
-    }
+    pb.finish_with_message("Done constructing glTF");
+
+    // Print all accumulated warnings and messages.
+    print_info(msgs);
+    print_warnings(warnings);
 
     let output = Output::from_ext(output);
 
@@ -673,6 +677,9 @@ pub fn export(
         ..Default::default()
     };
 
+    let pb = new_progress_bar_file(quiet, 0);
+    pb.set_message("Writing glTF to File");
+
     match output {
         Output::Binary { glb_path } => {
             // Output in binary format.
@@ -690,9 +697,12 @@ pub fn export(
                 json: Cow::Owned(json_string.into_bytes()),
             };
 
+            // This is an approximation of the total size.
+            pb.set_length((glb.header.length + 28) as u64);
+
             let writer =
                 std::fs::File::create(glb_path).expect("ERROR: Failed to create output .glb file");
-            glb.to_writer(writer)
+            glb.to_writer(pb.wrap_write(writer))
                 .expect("ERROR: Failed to output glTF binary data");
         }
         Output::Standard {
@@ -710,11 +720,16 @@ pub fn export(
                 .expect("ERROR: Failed to serialize glTF json");
 
             let bin = to_padded_byte_vector(data);
-            let mut writer = std::fs::File::create(binary_path)
+
+            pb.set_length(bin.len() as u64);
+
+            let writer = std::fs::File::create(binary_path)
                 .expect("ERROR: Failed to create output .bin file");
-            writer
+            pb.wrap_write(writer)
                 .write_all(&bin)
                 .expect("ERROR: Failed to output glTF binary data");
         }
     }
+
+    pb.finish_with_message("Success!");
 }

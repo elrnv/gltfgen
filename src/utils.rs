@@ -1,4 +1,38 @@
+use indicatif::{ProgressBar, ProgressStyle};
 use regex::Regex;
+
+#[macro_export]
+macro_rules! log {
+    ($msgs:ident; $($arg:tt)*) => ({
+        let msg = format!($($arg)*);
+        if let Some((count, last_msg)) = $msgs.last_mut() {
+            if last_msg == &msg {
+                *count += 1;
+            } else {
+                $msgs.push((1, msg));
+            }
+        } else {
+            $msgs.push((1, msg));
+        }
+    });
+}
+
+pub fn print_warnings(messages: Vec<(usize, String)>) {
+    print_messages(messages, console::style("WARNING").yellow().for_stderr());
+}
+pub fn print_info(messages: Vec<(usize, String)>) {
+    print_messages(messages, console::style("INFO").blue().for_stderr());
+}
+
+fn print_messages(messages: Vec<(usize, String)>, prefix: impl std::fmt::Display) {
+    for (count, warning) in messages {
+        if count > 1 {
+            eprintln!("{} ({}): {}", prefix, count, warning);
+        } else {
+            eprintln!("{}: {}", prefix, warning);
+        }
+    }
+}
 
 pub fn glob_to_regex(glob: &str) -> Regex {
     let mut regex = String::from("^");
@@ -67,4 +101,42 @@ pub fn remove_braces(pattern: &str) -> String {
         out_pattern.push(c);
     }
     out_pattern
+}
+
+pub fn new_progress_bar(quiet: bool, len: usize) -> ProgressBar {
+    if !quiet {
+        ProgressBar::new(len as u64).with_style(
+            ProgressStyle::default_bar()
+                .template("{elapsed:4} [{bar:20.cyan/blue}] {pos:>7}/{len:7} {msg}")
+                .progress_chars("=> "),
+        )
+    } else {
+        ProgressBar::hidden()
+    }
+}
+
+pub fn new_progress_bar_file(quiet: bool, num_bytes: usize) -> ProgressBar {
+    if !quiet {
+        ProgressBar::new(num_bytes as u64).with_style(
+            ProgressStyle::default_bar()
+                .template("{elapsed:4} [{bar:20.green}] {percent:>7}%        {msg}")
+                .progress_chars("=> "),
+        )
+    } else {
+        ProgressBar::hidden()
+    }
+}
+
+pub fn new_spinner(quiet: bool) -> ProgressBar {
+    let spinner = if !quiet {
+        ProgressBar::new_spinner().with_style(
+            ProgressStyle::default_spinner()
+                .template("{elapsed:4} {spinner:1.cyan/blue} {prefix:32.cyan/blue}     {wide_msg}")
+                .tick_chars("⣾⣽⣻⢿⡿⣟⣯⣷"),
+        )
+    } else {
+        ProgressBar::hidden()
+    };
+    spinner.enable_steady_tick(100);
+    spinner
 }

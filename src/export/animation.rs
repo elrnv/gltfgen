@@ -2,15 +2,14 @@ use super::builders::*;
 use byteorder::{WriteBytesExt, LE};
 use gltf::json;
 use gut::ops::*;
+use indicatif::ProgressBar;
 use json::accessor::ComponentType as GltfComponentType;
 use json::accessor::Type as GltfType;
 use json::validation::Checked::Valid;
-use pbr::ProgressBar;
-use std::io::Write;
 use std::mem;
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn build_animation<T: Write>(
+pub(crate) fn build_animation(
     first_frame: usize,
     morphs: &[(usize, Vec<[f32; 3]>)],
     node_index: usize,
@@ -18,8 +17,7 @@ pub(crate) fn build_animation<T: Write>(
     buffer_views: &mut Vec<json::buffer::View>,
     data: &mut Vec<u8>,
     time_step: f32,
-    quiet: bool,
-    pb: &mut ProgressBar<T>,
+    pb: &ProgressBar,
 ) -> Option<(
     json::animation::Channel,
     json::animation::Sampler,
@@ -91,9 +89,7 @@ pub(crate) fn build_animation<T: Write>(
     accessors.push(time_acc);
 
     for (_, displacements) in morphs.iter() {
-        if !quiet {
-            pb.inc();
-        }
+        pb.tick();
         let byte_length = displacements.len() * mem::size_of::<[f32; 3]>();
 
         let disp_view = json::buffer::View::new(byte_length, data.len())

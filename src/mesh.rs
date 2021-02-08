@@ -3,6 +3,7 @@ use gut::mesh::vertex_positions::VertexPositions;
 use gut::mesh::{PointCloud, PolyMesh, TetMesh, TriMesh};
 
 /// Supported output mesh types.
+#[derive(Debug)]
 pub enum Mesh {
     TriMesh(TriMesh<f32>),
     PointCloud(PointCloud<f32>),
@@ -98,6 +99,7 @@ pub fn trimesh_f64_to_f32(mesh: TriMesh<f64>) -> TriMesh<f32> {
         face_attributes,
         face_vertex_attributes,
         face_edge_attributes,
+        attribute_value_cache,
     } = mesh;
     TriMesh {
         vertex_positions: gut::mesh::attrib::IntrinsicAttribute::from_vec(
@@ -111,6 +113,7 @@ pub fn trimesh_f64_to_f32(mesh: TriMesh<f64>) -> TriMesh<f32> {
         face_attributes,
         face_vertex_attributes,
         face_edge_attributes,
+        attribute_value_cache,
     }
 }
 

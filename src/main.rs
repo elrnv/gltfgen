@@ -1,11 +1,12 @@
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
-use structopt::StructOpt;
 
+use console::style;
+use indicatif::ParallelProgressIterator;
 use rayon::prelude::*;
+use structopt::StructOpt;
+use thiserror::Error; // For colouring log messages.
 
-use thiserror::Error;
-
+use gltfgen::log;
 use gltfgen::*;
 
 const ABOUT: &str = "
@@ -291,6 +292,7 @@ fn main() -> Result<(), Error> {
     } else {
         80
     });
+
     let opt = Opt::from_clap(&app.get_matches());
 
     let pattern = if opt.pattern.starts_with("./") {
@@ -313,9 +315,10 @@ fn main() -> Result<(), Error> {
         require_literal_leading_dot: false,
     };
 
-    if !opt.quiet {
-        println!("Preprocessing Files...");
-    }
+    let pb = utils::new_spinner(opt.quiet);
+
+    pb.set_prefix("Looking for files");
+
     let entries: Vec<_> = glob::glob_with(&pattern, glob_options)?.collect();
 
     // First parse entries and retrieve the necessary data before building the meshes.
@@ -323,16 +326,22 @@ fn main() -> Result<(), Error> {
 
     let mut lowest_frame_num = None;
 
+    let mut warnings = Vec::new();
+
     let mut mesh_meta: Vec<_> = entries
         .into_iter()
         .filter_map(|entry| {
             entry.ok().and_then(|path| {
+                pb.tick();
                 let path_str = path.to_string_lossy();
+                if let Some(f) = path.file_name() {
+                    pb.set_message(&f.to_string_lossy());
+                }
                 let caps = match regex.captures(&path_str) {
                     Some(caps) => caps,
                     None => {
-                        eprintln!(
-                            "WARNING: Path '{}' skipped since regex '{}' did not match.",
+                        log!(warnings;
+                            "Path '{}' skipped since regex '{}' did not match.",
                             &path_str,
                             regex.as_str(),
                         );
@@ -364,11 +373,19 @@ fn main() -> Result<(), Error> {
         })
         .collect();
 
+    pb.finish_with_message(&format!("Found {} files", mesh_meta.len()));
+
+    print_warnings(warnings);
+
     // Prune mesh meta before building meshes
     if opt.step > 1 {
         if let Some(lowest_frame_num) = lowest_frame_num {
+            let pb = utils::new_progress_bar(opt.quiet, mesh_meta.len());
+            pb.set_message("Pruning frames");
+
             mesh_meta = mesh_meta
                 .into_par_iter()
+                .progress_with(pb.clone())
                 .filter_map(|(name, frame, path)| {
                     // Note frameless meshes are placed at frame zero, and they won't be skipped
                     // here.
@@ -378,14 +395,14 @@ fn main() -> Result<(), Error> {
                         None
                     }
                 })
-                .collect()
+                .collect();
+
+            pb.finish_with_message(&format!("{} frames remain after pruning", mesh_meta.len()));
         }
     }
 
-    let pb = Arc::new(RwLock::new(pbr::ProgressBar::new(mesh_meta.len() as u64)));
-    if !opt.quiet {
-        pb.write().unwrap().message("Building Meshes ")
-    }
+    let pb = utils::new_progress_bar(opt.quiet, mesh_meta.len());
+    pb.set_message("Building Meshes");
 
     let config = LoadConfig {
         attributes: &opt.attributes,
@@ -396,16 +413,22 @@ fn main() -> Result<(), Error> {
         invert_tets: opt.invert_tets,
     };
 
-    // Load all meshes with the appropriate conversions and attribute transfers.
-    let meshes = load_meshes(mesh_meta, config, || {
-        if !opt.quiet {
-            pb.write().unwrap().inc();
-        }
-    });
+    let process_attrib_error = |e| {
+        pb.println(format!("{}: {}, Skipping...", style("WARNING").yellow(), e));
+    };
 
-    if !opt.quiet {
-        pb.write().unwrap().finish();
-    }
+    // Load all meshes with the appropriate conversions and attribute transfers.
+    let meshes: Vec<_> = mesh_meta
+        .into_par_iter()
+        .progress_with(pb.clone())
+        .filter_map(|(name, frame, path)| {
+            load_mesh(&path, config, process_attrib_error)
+                .map(|(mesh, attrib_transfer)| (name, frame, mesh, attrib_transfer))
+        })
+        .collect();
+
+    pb.finish_with_message("Done building meshes");
+
     let dt = if let Some(dt) = opt.time_step {
         dt
     } else {
@@ -416,10 +439,6 @@ fn main() -> Result<(), Error> {
         return Err(Error::NoMeshesFound);
     }
 
-    if !opt.quiet {
-        println!("Exporting glTF...");
-    }
-
     export::export(
         meshes,
         opt.output,
@@ -428,8 +447,6 @@ fn main() -> Result<(), Error> {
         opt.textures,
         opt.materials,
     );
-    if !opt.quiet {
-        println!("Success!");
-    }
+
     Ok(())
 }

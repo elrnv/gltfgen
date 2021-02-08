@@ -1,12 +1,13 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
+#[macro_use]
+pub mod utils;
 #[macro_use]
 pub mod attrib;
 pub mod export;
 pub mod material;
 pub mod mesh;
 pub mod texture;
-pub mod utils;
 
 pub use attrib::*;
 pub use material::*;
@@ -17,6 +18,7 @@ use mesh::Mesh;
 
 use rayon::prelude::*;
 
+#[derive(Clone, Copy, Debug)]
 pub struct LoadConfig<'a> {
     pub attributes: &'a AttributeInfo,
     pub colors: &'a AttributeInfo,
@@ -26,54 +28,63 @@ pub struct LoadConfig<'a> {
     pub invert_tets: bool,
 }
 
-pub fn load_meshes<P: Fn() + Send + Sync>(
+pub fn load_meshes(
     mesh_meta: Vec<(String, usize, PathBuf)>,
     config: LoadConfig,
-    progress_inc: P,
 ) -> Vec<(String, usize, Mesh, AttribTransfer)> {
+    let process_attrib_error = |e| log::warn!("{}, Skipping...", e);
     mesh_meta
         .into_par_iter()
         .filter_map(|(name, frame, path)| {
-            progress_inc();
-            let mut mesh = if let Ok(polymesh) = gut::io::load_polymesh::<f64, _>(&path) {
-                polymesh.into()
-            } else if let Ok(polymesh) = gut::io::load_polymesh::<f32, _>(&path) {
-                polymesh.into()
-            } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f64, _>(&path) {
-                let mut mesh = Mesh::from(tetmesh);
-                if config.invert_tets {
-                    mesh.reverse();
-                }
-                mesh
-            } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f32, _>(&path) {
-                let mut mesh = Mesh::from(tetmesh);
-                if config.invert_tets {
-                    mesh.reverse();
-                }
-                mesh
-            } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f64, _>(&path) {
-                ptcloud.into()
-            } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f32, _>(&path) {
-                ptcloud.into()
-            } else {
-                return None;
-            };
-
-            if config.reverse {
-                mesh.reverse();
-            }
-
-            let attrib_transfer = clean_attributes(
-                &mut mesh,
-                config.attributes,
-                config.colors,
-                config.texcoords,
-                config.material_attribute,
-            );
-
-            Some((name, frame, mesh, attrib_transfer))
+            load_mesh(&path, config, process_attrib_error)
+                .map(|(mesh, attrib_transfer)| (name, frame, mesh, attrib_transfer))
         })
         .collect()
+}
+
+pub fn load_mesh(
+    path: &Path,
+    config: LoadConfig,
+    process_attrib_error: impl FnMut(attrib::AttribError),
+) -> Option<(Mesh, AttribTransfer)> {
+    let mut mesh = if let Ok(polymesh) = gut::io::load_polymesh::<f64, _>(path) {
+        polymesh.into()
+    } else if let Ok(polymesh) = gut::io::load_polymesh::<f32, _>(path) {
+        polymesh.into()
+    } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f64, _>(path) {
+        let mut mesh = Mesh::from(tetmesh);
+        if config.invert_tets {
+            mesh.reverse();
+        }
+        mesh
+    } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f32, _>(path) {
+        let mut mesh = Mesh::from(tetmesh);
+        if config.invert_tets {
+            mesh.reverse();
+        }
+        mesh
+    } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f64, _>(path) {
+        ptcloud.into()
+    } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f32, _>(path) {
+        ptcloud.into()
+    } else {
+        return None;
+    };
+
+    if config.reverse {
+        mesh.reverse();
+    }
+
+    let attrib_transfer = clean_attributes(
+        &mut mesh,
+        config.attributes,
+        config.colors,
+        config.texcoords,
+        config.material_attribute,
+        process_attrib_error,
+    );
+
+    Some((mesh, attrib_transfer))
 }
 
 #[cfg(test)]
@@ -104,6 +115,6 @@ mod tests {
             invert_tets: false,
         };
 
-        load_meshes(mesh_meta, config, || {});
+        load_meshes(mesh_meta, config);
     }
 }

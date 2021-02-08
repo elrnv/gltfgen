@@ -208,8 +208,8 @@ pub(crate) fn write_tex_attribute_data<T: Copy + WriteBytes + 'static>(
         iter.for_each(|&[a, b, _]| [a, b].write_bytes(data));
     // Be lenient and try a 3 vector. Sometime uv coordinates are stored in a 3D vector.
     } else {
-        eprintln!(
-            "WARNING: Unsupported texture coordinate attribute: \"{:?}\". Skipping...",
+        log::warn!(
+            "Unsupported texture coordinate attribute: \"{:?}\". Skipping...",
             (attrib.name.as_str(), attrib.component_type)
         );
     }
@@ -222,8 +222,8 @@ pub(crate) fn write_color_attribute_data<T: Copy + WriteBytes + 'static>(
     if let Ok(iter) = VertexAttribute::iter::<T>(&attrib.attribute) {
         iter.for_each(|x| x.write_bytes(data));
     } else {
-        eprintln!(
-            "WARNING: Unsupported color coordinate attribute: \"{:?}\". Skipping...",
+        log::warn!(
+            "Unsupported color coordinate attribute: \"{:?}\". Skipping...",
             (attrib.name.as_str(), attrib.type_)
         );
     }

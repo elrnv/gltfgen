@@ -5,6 +5,33 @@ use gut::mesh::TriMesh;
 use indexmap::map::IndexMap;
 use serde::Deserialize;
 
+#[derive(Debug)]
+pub enum AttribError {
+    InvalidTexCoordAttribType(ComponentType),
+    Mesh(gut::mesh::attrib::Error),
+}
+
+impl std::error::Error for AttribError {}
+
+impl std::fmt::Display for AttribError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            AttribError::InvalidTexCoordAttribType(t) => write!(
+                f,
+                "Invalid texture coordinate attribute type detected: {:?}. Skipping...",
+                t
+            ),
+            AttribError::Mesh(e) => write!(f, "Mesh: {}", e),
+        }
+    }
+}
+
+impl From<gut::mesh::attrib::Error> for AttribError {
+    fn from(e: gut::mesh::attrib::Error) -> AttribError {
+        AttribError::Mesh(e)
+    }
+}
+
 pub type VertexAttribute = gut::mesh::attrib::Attribute<VertexIndex>;
 
 pub type AttribTransfer = (
@@ -39,6 +66,7 @@ pub(crate) fn clean_attributes(
     color_attribs: &AttributeInfo,
     tex_attributes: &TextureAttributeInfo,
     material_attribute: &str,
+    mut process_attrib_error: impl FnMut(AttribError),
 ) -> AttribTransfer {
     // First we remove all attributes we want to keep.
     let tex_attribs_to_keep: Vec<_> = if let Mesh::TriMesh(mesh) = mesh {
@@ -47,7 +75,13 @@ pub(crate) fn clean_attributes(
             .iter()
             .enumerate()
             .filter_map(|(id, attrib)| {
-                promote_and_remove_texture_coordinate_attribute(mesh, attrib, id)
+                match promote_and_remove_texture_coordinate_attribute(mesh, attrib, id) {
+                    Err(e) => {
+                        process_attrib_error(e);
+                        None
+                    }
+                    Ok(r) => Some(r),
+                }
             })
             .collect()
     } else {
@@ -119,20 +153,19 @@ fn remove_attribute(mesh: &mut Mesh, attrib: (&String, &Type)) -> Option<Attribu
 
 /// Try to promote the texture coordinate attribute from `FaceVertex` attribute to `Vertex`
 /// attribute.
-fn try_tex_coord_promote<'a, T>(name: &str, mesh: &'a mut TriMesh<f32>) -> Option<()>
+fn try_tex_coord_promote<'a, T>(name: &str, mesh: &'a mut TriMesh<f32>) -> Result<(), AttribError>
 where
     T: PartialEq + Clone + std::fmt::Debug + 'static,
 {
     use gut::mesh::attrib::AttribPromote;
     let err = "Texture coordinate collisions detected. Please report this issue.";
-    mesh.attrib_promote::<[T; 2], _>(name, |a, b| assert_eq!(&*a, b, "{}", err))
-        .ok()
+    Ok(mesh
+        .attrib_promote::<[T; 2], _>(name, |a, b| assert_eq!(&*a, b, "{}", err))
         .map(|_| ())
-        .or_else(|| {
+        .or_else(|_| {
             mesh.attrib_promote::<[T; 3], _>(name, |a, b| assert_eq!(&*a, b, "{}", err))
-                .ok()
                 .map(|_| ())
-        })
+        })?)
 }
 
 /// Promote the given attribute to a vertex attribute by splitting the vertex positions for
@@ -142,37 +175,31 @@ fn promote_and_remove_texture_coordinate_attribute(
     mesh: &mut TriMesh<f32>,
     attrib: (&String, &ComponentType),
     id: usize,
-) -> Option<TextureAttribute> {
+) -> Result<TextureAttribute, AttribError> {
     use gut::mesh::attrib::Attrib;
 
     // Split the mesh according to texture attributes such that every unique texture attribute
     // value will have its own unique vertex. This is required since gltf doesn't support multiple
     // topologies.
 
-    mesh.split_vertices_by_attrib(&attrib.0);
+    mesh.split_vertices_by_face_vertex_attrib(&attrib.0);
 
     match *attrib.1 {
         ComponentType::U8 => try_tex_coord_promote::<u8>(&attrib.0, mesh),
         ComponentType::U16 => try_tex_coord_promote::<u16>(&attrib.0, mesh),
         ComponentType::F32 => try_tex_coord_promote::<f32>(&attrib.0, mesh),
-        t => {
-            eprintln!(
-                "WARNING: Invalid texture coordinate attribute type detected: {:?}. Skipping...",
-                t
-            );
-            None
-        }
+        t => Err(AttribError::InvalidTexCoordAttribType(t)),
     }?;
 
     // The attribute has been promoted, remove it from the mesh for later use.
-    mesh.remove_attrib::<VertexIndex>(&attrib.0)
-        .ok()
+    Ok(mesh
+        .remove_attrib::<VertexIndex>(&attrib.0)
         .map(|a| TextureAttribute {
             id: id as u32,
             name: attrib.0.clone(),
             component_type: *attrib.1,
             attribute: a,
-        })
+        })?)
 }
 
 #[derive(Clone, Debug, PartialEq)]
