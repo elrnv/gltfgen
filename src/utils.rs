@@ -47,7 +47,7 @@ pub fn glob_to_regex(glob: &str) -> Regex {
             }
             // Escape special characters
             '$' | '^' | '+' | '.' | '(' | ')' | '=' | '!' | '|' => {
-                regex.push_str("\\");
+                regex.push('\\');
                 regex.push(c);
             }
             '{' => regex.push('('),

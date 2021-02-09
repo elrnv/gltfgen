@@ -90,11 +90,7 @@ impl Into<json::Material> for MaterialInfo {
         } = self;
 
         json::Material {
-            name: if name.is_empty() {
-                None
-            } else {
-                Some(name.to_owned())
-            },
+            name: if name.is_empty() { None } else { Some(name) },
             alpha_cutoff: json::material::AlphaCutoff(0.5),
             alpha_mode: Valid(json::material::AlphaMode::Opaque),
             double_sided: false,

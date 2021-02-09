@@ -12,9 +12,9 @@ use byteorder::{WriteBytesExt, LE};
 use json::validation::Checked::Valid;
 
 pub(crate) trait BufferViewBuilder {
-    fn new(byte_length: usize, byte_offset: usize) -> json::buffer::View;
-    fn with_target(self, target: json::buffer::Target) -> json::buffer::View;
-    fn with_stride(self, byte_stride: usize) -> json::buffer::View;
+    fn new(byte_length: usize, byte_offset: usize) -> Self;
+    fn with_target(self, target: json::buffer::Target) -> Self;
+    fn with_stride(self, byte_stride: usize) -> Self;
 }
 
 impl BufferViewBuilder for json::buffer::View {
@@ -41,23 +41,15 @@ impl BufferViewBuilder for json::buffer::View {
 }
 
 pub(crate) trait AccessorBuilder {
-    fn new(count: usize, generic_comp: GltfComponentType) -> json::Accessor;
-    fn with_name(self, name: String) -> json::Accessor;
-    fn with_buffer_view(self, buffer_view: usize) -> json::Accessor;
-    fn with_type(self, type_: GltfType) -> json::Accessor;
-    fn with_component_type(
-        self,
-        component_type: json::accessor::GenericComponentType,
-    ) -> json::Accessor;
-    fn with_min_max<'a, T>(self, min: &'a [T], max: &'a [T]) -> json::Accessor
+    fn new(count: usize, generic_comp: GltfComponentType) -> Self;
+    fn with_name(self, name: String) -> Self;
+    fn with_buffer_view(self, buffer_view: usize) -> Self;
+    fn with_type(self, type_: GltfType) -> Self;
+    fn with_component_type(self, component_type: json::accessor::GenericComponentType) -> Self;
+    fn with_min_max<'a, T>(self, min: &'a [T], max: &'a [T]) -> Self
     where
         json::Value: From<&'a [T]>;
-    fn with_sparse(
-        self,
-        count: usize,
-        indices_buf_view: usize,
-        values_buf_view: usize,
-    ) -> json::Accessor;
+    fn with_sparse(self, count: usize, indices_buf_view: usize, values_buf_view: usize) -> Self;
 }
 
 impl AccessorBuilder for json::Accessor {

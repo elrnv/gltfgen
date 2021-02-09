@@ -153,7 +153,7 @@ fn remove_attribute(mesh: &mut Mesh, attrib: (&String, &Type)) -> Option<Attribu
 
 /// Try to promote the texture coordinate attribute from `FaceVertex` attribute to `Vertex`
 /// attribute.
-fn try_tex_coord_promote<'a, T>(name: &str, mesh: &'a mut TriMesh<f32>) -> Result<(), AttribError>
+fn try_tex_coord_promote<T>(name: &str, mesh: &mut TriMesh<f32>) -> Result<(), AttribError>
 where
     T: PartialEq + Clone + std::fmt::Debug + 'static,
 {
