@@ -245,6 +245,11 @@ struct Opt {
     /// values between 0.0 and 1.0. 'metallic' and 'roughness' factors are
     /// expected to be between 0.0 and 1.0.
     ///
+    /// 'base_texture' specifies the texture to be used by the material. 'index' specifies the
+    /// 0-based index of the texture provided by the '--textures' (or '-x') flag. 'texcoord'
+    /// specifies the index of the texture attribute specified by the '--texcoords' (or '-u') flag.
+    /// 'base_texture' is not set by default.
+    ///
     /// Default values are 0.0 for 'metallic', 0.5 for 'roughness', and [0.5, 0.5,
     /// 0.5, 1.0] for 'base_color.
     ///

@@ -168,28 +168,35 @@ where
         })?)
 }
 
-/// Promote the given attribute to a vertex attribute by splitting the vertex positions for
+/// Promote the given attribute to from a face-vertex to a vertex attribute.
+///
+/// This is done by splitting the vertex positions for
 /// unique values of the given face-vertex attribute. Then remove this attribute from the mesh for
 /// later transfer.
+///
+/// If the given texture attribute is already a vertex attribute, skip the promotion stage.
 fn promote_and_remove_texture_coordinate_attribute(
     mesh: &mut TriMesh<f32>,
     attrib: (&String, &ComponentType),
     id: usize,
 ) -> Result<TextureAttribute, AttribError> {
     use gut::mesh::attrib::Attrib;
+    use gut::mesh::topology::FaceVertexIndex;
 
-    // Split the mesh according to texture attributes such that every unique texture attribute
-    // value will have its own unique vertex. This is required since gltf doesn't support multiple
-    // topologies.
+    if mesh.attrib_exists::<FaceVertexIndex>(&attrib.0) {
+        // Split the mesh according to texture attributes such that every unique texture attribute
+        // value will have its own unique vertex. This is required since gltf doesn't support multiple
+        // topologies.
 
-    mesh.split_vertices_by_face_vertex_attrib(&attrib.0);
+        mesh.split_vertices_by_face_vertex_attrib(&attrib.0);
 
-    match *attrib.1 {
-        ComponentType::U8 => try_tex_coord_promote::<u8>(&attrib.0, mesh),
-        ComponentType::U16 => try_tex_coord_promote::<u16>(&attrib.0, mesh),
-        ComponentType::F32 => try_tex_coord_promote::<f32>(&attrib.0, mesh),
-        t => Err(AttribError::InvalidTexCoordAttribType(t)),
-    }?;
+        match *attrib.1 {
+            ComponentType::U8 => try_tex_coord_promote::<u8>(&attrib.0, mesh),
+            ComponentType::U16 => try_tex_coord_promote::<u16>(&attrib.0, mesh),
+            ComponentType::F32 => try_tex_coord_promote::<f32>(&attrib.0, mesh),
+            t => Err(AttribError::InvalidTexCoordAttribType(t)),
+        }?;
+    }
 
     // The attribute has been promoted, remove it from the mesh for later use.
     Ok(mesh

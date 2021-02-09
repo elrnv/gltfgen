@@ -9,16 +9,17 @@ use utils::*;
 fn box_triangulated() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let stderr = "Material ID was found but no materials were specified.";
-    cmd.arg("./tests/artifacts/box_triangulated.glb")
+    let artifact = "./tests/artifacts/box_triangulated.glb";
+    cmd.arg(artifact)
         .arg("./assets/{box_triangulated}.vtk")
         .arg("-a")
         .arg("{\"pressure\": f32}")
         .assert()
-        .stderr(predicate::str::contains(stderr)) // No errors
+        .stderr(predicate::str::contains(stderr))
         .success();
 
     let expected = Gltf::open("./assets/box_triangulated_expected.glb")?;
-    let actual = Gltf::open("./tests/artifacts/box_triangulated.glb")?;
+    let actual = Gltf::open(artifact)?;
 
     assert_eq_gltf(&expected, &actual);
     Ok(())
@@ -28,14 +29,15 @@ fn box_triangulated() -> Result<(), Error> {
 fn box_rotate_simple() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let stderr = "Material ID was found but no materials were specified.";
-    cmd.arg("./tests/artifacts/box_rotate_simple.glb")
+    let artifact = "./tests/artifacts/box_rotate_simple.glb";
+    cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .assert()
-        .stderr(predicate::str::contains(stderr)) // No errors
+        .stderr(predicate::str::contains(stderr))
         .success();
 
     let expected = Gltf::open("./assets/box_rotate_simple_expected.glb")?;
-    let actual = Gltf::open("./tests/artifacts/box_rotate_simple.glb")?;
+    let actual = Gltf::open(artifact)?;
 
     assert_eq_gltf_with_bytes(&expected, &actual);
     Ok(())
@@ -44,20 +46,23 @@ fn box_rotate_simple() -> Result<(), Error> {
 #[test]
 fn box_rotate_obj() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
-    cmd.arg("./tests/artifacts/box_rotate_obj.glb")
+    let artifact = "./tests/artifacts/box_rotate_obj.glb";
+    cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.obj")
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
         .arg("-u")
         .arg("{\"uv\": f32}")
         .arg("-m")
-        .arg("(name:\"checkerboard\")")
+        .arg("(name:\"checkerboard\", base_texture:(index:0,texcoord:0))")
         .assert()
-        .stderr(b"" as &[u8]) // No errors
+        .stderr(b"" as &[u8])
         .success();
 
-    let expected = Gltf::open("./assets/box_rotate_expected.glb")?;
-    let actual = Gltf::open("./tests/artifacts/box_rotate.glb")?;
+    // The reason this has a different result than box_rotate is because in this case
+    // the saved objs have 2D uv coordinates instead of 3D.
+    let expected = Gltf::open("./assets/box_rotate_2Duv_expected.glb")?;
+    let actual = Gltf::open(artifact)?;
 
     assert_eq_gltf_with_bytes(&expected, &actual);
     Ok(())
@@ -66,20 +71,21 @@ fn box_rotate_obj() -> Result<(), Error> {
 #[test]
 fn box_rotate() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
-    cmd.arg("./tests/artifacts/box_rotate.glb")
+    let artifact = "./tests/artifacts/box_rotate.glb";
+    cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
         .arg("-u")
         .arg("{\"uv\": f32}")
         .arg("-m")
-        .arg("(name:\"checkerboard\")")
+        .arg("(name:\"checkerboard\", base_texture:(index:0,texcoord:0))")
         .assert()
         .stderr(b"" as &[u8]) // No errors
         .success();
 
     let expected = Gltf::open("./assets/box_rotate_expected.glb")?;
-    let actual = Gltf::open("./tests/artifacts/box_rotate.glb")?;
+    let actual = Gltf::open(artifact)?;
 
     assert_eq_gltf_with_bytes(&expected, &actual);
     Ok(())
@@ -88,7 +94,8 @@ fn box_rotate() -> Result<(), Error> {
 #[test]
 fn box_rotate_attribs() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
-    cmd.arg("./tests/artifacts/box_rotate_pressure.glb")
+    let artifact = "./tests/artifacts/box_rotate_pressure.glb";
+    cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
@@ -99,13 +106,13 @@ fn box_rotate_attribs() -> Result<(), Error> {
         .arg("-c")
         .arg("{\"Cd\": vec3(f32)}")
         .arg("-m")
-        .arg("(name:\"checkerboard\")")
+        .arg("(name:\"checkerboard\", base_texture:(index:0,texcoord:0))")
         .assert()
         .stderr(b"" as &[u8]) // No errors
         .success();
 
     let expected = Gltf::open("./assets/box_rotate_pressure_expected.glb")?;
-    let actual = Gltf::open("./tests/artifacts/box_rotate_pressure.glb")?;
+    let actual = Gltf::open(artifact)?;
 
     assert_eq_gltf_with_bytes(&expected, &actual);
     Ok(())
@@ -114,7 +121,8 @@ fn box_rotate_attribs() -> Result<(), Error> {
 #[test]
 fn box_rotate_attribs_gltf() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
-    cmd.arg("./tests/artifacts/box_rotate_pressure.gltf")
+    let artifact = "./tests/artifacts/box_rotate_pressure.gltf";
+    cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
@@ -131,7 +139,7 @@ fn box_rotate_attribs_gltf() -> Result<(), Error> {
         .success();
 
     let expected = Gltf::open("./assets/box_rotate_pressure_expected.glb")?;
-    let actual = Gltf::open("./tests/artifacts/box_rotate_pressure.gltf")?;
+    let actual = Gltf::open(artifact)?;
 
     assert_eq_gltf(&expected, &actual);
     Ok(())
@@ -141,7 +149,8 @@ fn box_rotate_attribs_gltf() -> Result<(), Error> {
 fn tet() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let warning = "Material ID was found but no materials were specified.";
-    cmd.arg("./tests/artifacts/tet.glb")
+    let artifact = "./tests/artifacts/tet.glb";
+    cmd.arg(artifact)
         .arg("./assets/{tet}_#.vtk")
         .arg("-a")
         .arg("{\"pressure\": f32}")
@@ -150,7 +159,7 @@ fn tet() -> Result<(), Error> {
         .success();
 
     let expected = Gltf::open("./assets/tet_expected.glb")?;
-    let actual = Gltf::open("./tests/artifacts/tet.glb")?;
+    let actual = Gltf::open(artifact)?;
 
     assert_eq_gltf_with_bytes(&expected, &actual);
     Ok(())
@@ -162,7 +171,8 @@ fn multi() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let warning1 = "Material ID was found but no materials were specified.";
     let warning2 = "Path 'assets/box_triangulated.vtk' skipped since regex '^assets/([^/]*)_(?P<frame>[0-9]+)\\.vtk$' did not match.";
-    cmd.arg("./tests/artifacts/multi.glb")
+    let artifact = "./tests/artifacts/multi.glb";
+    cmd.arg(artifact)
         .arg("./assets/{*}_#.vtk")
         .arg("-a")
         .arg("{\"pressure\": f32}")
@@ -171,7 +181,7 @@ fn multi() -> Result<(), Error> {
         .success();
 
     let expected = Gltf::open("./assets/multi_expected.glb")?;
-    let actual = Gltf::open("./tests/artifacts/multi.glb")?;
+    let actual = Gltf::open(artifact)?;
 
     assert_eq_gltf_with_bytes(&expected, &actual);
     Ok(())

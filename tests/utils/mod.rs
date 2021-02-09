@@ -14,6 +14,7 @@ pub(crate) fn assert_eq_gltf(expected: &Gltf, actual: &Gltf) {
     assert_eq!(exp_buffer.name(), act_buffer.name());
 
     // Buffer Views
+    assert_eq!(expected.views().count(), actual.views().count());
     for (exp_view, act_view) in expected.views().zip(actual.views()) {
         assert_eq!(exp_view.index(), act_view.index());
         assert_eq!(exp_view.length(), act_view.length());
@@ -24,6 +25,7 @@ pub(crate) fn assert_eq_gltf(expected: &Gltf, actual: &Gltf) {
     }
 
     // Accessors
+    assert_eq!(expected.accessors().count(), actual.accessors().count());
     for (exp_acc, act_acc) in expected.accessors().zip(actual.accessors()) {
         assert_eq!(exp_acc.index(), act_acc.index());
         assert_eq!(exp_acc.size(), act_acc.size());
@@ -48,6 +50,7 @@ pub(crate) fn assert_eq_gltf(expected: &Gltf, actual: &Gltf) {
     }
 
     // Nodes
+    assert_eq!(expected.nodes().count(), actual.nodes().count());
     for (exp_node, act_node) in expected.nodes().zip(actual.nodes()) {
         assert_eq!(exp_node.index(), act_node.index());
         let exp_mesh = exp_node.mesh().unwrap();
@@ -57,6 +60,7 @@ pub(crate) fn assert_eq_gltf(expected: &Gltf, actual: &Gltf) {
         assert_eq!(exp_mesh.weights(), act_mesh.weights());
 
         // Primitives
+        assert_eq!(exp_mesh.primitives().count(), act_mesh.primitives().count());
         for (exp_prim, act_prim) in exp_mesh.primitives().zip(act_mesh.primitives()) {
             assert_eq!(exp_prim.index(), act_prim.index());
             assert_eq!(exp_prim.bounding_box(), act_prim.bounding_box());
@@ -64,6 +68,7 @@ pub(crate) fn assert_eq_gltf(expected: &Gltf, actual: &Gltf) {
             // For some reason the attributes may not be ordered properly. In reality we only care
             // that they are the same, since the order doesn't matter.
 
+            assert_eq!(exp_prim.attributes().count(), act_prim.attributes().count());
             for exp_attrib in exp_prim.attributes() {
                 let act_attrib = act_prim
                     .attributes()

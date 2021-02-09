@@ -145,6 +145,132 @@ fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -
     out
 }
 
+struct TextureData {
+    samplers: Vec<json::texture::Sampler>,
+    images: Vec<json::image::Image>,
+    textures: Vec<json::texture::Texture>,
+}
+
+fn build_texture_data(
+    textures: Vec<TextureInfo>,
+    data: &mut Vec<u8>,
+    buffer_views: &mut Vec<json::buffer::View>,
+    warnings: &mut Vec<(usize, String)>,
+) -> TextureData {
+    // Populate images, samplers and textures
+    let mut samplers = Vec::new();
+    let mut images = Vec::new();
+    let textures: Vec<_> = textures
+        .into_iter()
+        .filter_map(
+            |TextureInfo {
+                 image,
+                 wrap_s,
+                 wrap_t,
+                 mag_filter,
+                 min_filter,
+             }| {
+                let image = match image {
+                    ImageInfo::Uri(path) => json::image::Image {
+                        name: None,
+                        buffer_view: None,
+                        mime_type: None,
+                        uri: Some(path),
+                        extensions: Default::default(),
+                        extras: Default::default(),
+                    },
+                    ImageInfo::Embed(path) => {
+                        // Determine the type
+                        let path = std::path::PathBuf::from(path);
+                        let mime_type =
+                            path.extension()
+                                .and_then(|ext| ext.to_str())
+                                .and_then(|ext| match ext.to_lowercase().as_str() {
+                                    "jpeg" | "jpg" => Some("image/jpeg".to_string()),
+                                    "png" => Some("image/png".to_string()),
+                                    _ => None,
+                                });
+
+                        if mime_type.is_none() {
+                            log!(warnings;
+                                "Image must be in png or jpg format: {:?}. Skipping...",
+                                &path
+                            );
+                            return None;
+                        }
+
+                        let mime_type = mime_type.unwrap();
+
+                        // Read the image directly into the buffer.
+                        if let Ok(mut file) = std::fs::File::open(&path) {
+                            use std::io::Read;
+                            let orig_len = data.len();
+                            if let Ok(bytes_read) = file.read_to_end(data) {
+                                // Instead of guessing the size of the image we just wait until reading is
+                                // done.
+                                assert_eq!(bytes_read, data.len() - orig_len);
+                                let image_view = json::buffer::View::new(bytes_read, orig_len);
+                                let image_view_index = buffer_views.len();
+                                buffer_views.push(image_view);
+                                json::image::Image {
+                                    name: None,
+                                    buffer_view: json::Index::new(image_view_index as u32).into(),
+                                    mime_type: json::image::MimeType(mime_type).into(),
+                                    uri: None,
+                                    extensions: Default::default(),
+                                    extras: Default::default(),
+                                }
+                            } else {
+                                // Truncate the data vec back to original size to avoid corruption.
+                                data.resize(orig_len, 0);
+                                log!(warnings;
+                                    "Failed to read image: {:?}. Skipping...",
+                                    &path
+                                );
+                                return None;
+                            }
+                        } else {
+                            log!(warnings;
+                                "Failed to read image: {:?}. Skipping...",
+                                &path
+                            );
+                            return None;
+                        }
+                    }
+                };
+                let image_index = images.len();
+                images.push(image);
+
+                let sampler = json::texture::Sampler {
+                    mag_filter: mag_filter.into(),
+                    min_filter: min_filter.into(),
+                    wrap_s: wrap_s.into(),
+                    wrap_t: wrap_t.into(),
+                    name: None,
+                    extensions: Default::default(),
+                    extras: Default::default(),
+                };
+                let sampler_index = samplers.len();
+                samplers.push(sampler);
+
+                Some(json::texture::Texture {
+                    source: json::Index::new(image_index as u32),
+                    sampler: json::Index::new(sampler_index as u32).into(),
+                    name: None,
+                    extensions: Default::default(),
+                    extras: Default::default(),
+                })
+            },
+        )
+        .collect();
+
+    TextureData {
+        samplers,
+        images,
+        textures,
+    }
+}
+
 pub fn export(
     mut meshes: Vec<(String, usize, Mesh, AttribTransfer)>,
     output: PathBuf,
@@ -303,6 +429,7 @@ pub fn export(
 
                 let (type_, component_type) = attrib.type_.into();
                 let attrib_acc = json::Accessor::new(attrib.attribute.len(), component_type)
+                    .with_name(attrib.name.clone())
                     .with_buffer_view(attrib_view_index)
                     .with_type(type_);
 
@@ -329,6 +456,7 @@ pub fn export(
 
                 let (type_, component_type) = attrib.type_.into();
                 let attrib_acc = json::Accessor::new(attrib.attribute.len(), component_type)
+                    .with_name(attrib.name.clone())
                     .with_buffer_view(attrib_view_index)
                     .with_type(type_);
 
@@ -380,6 +508,7 @@ pub fn export(
 
                 let attrib_acc =
                     json::Accessor::new(attrib.attribute.len(), attrib.component_type.into())
+                        .with_name(attrib.name.clone())
                         .with_buffer_view(attrib_view_index)
                         .with_type(GltfType::Vec2);
 
@@ -515,112 +644,11 @@ pub fn export(
         vec![]
     };
 
-    // Populate images, samplers and textures
-    let mut samplers = Vec::new();
-    let mut images = Vec::new();
-    let textures: Vec<_> = textures
-        .into_iter()
-        .filter_map(
-            |TextureInfo {
-                 image,
-                 wrap_s,
-                 wrap_t,
-                 mag_filter,
-                 min_filter,
-             }| {
-                let image = match image {
-                    ImageInfo::Uri(path) => json::image::Image {
-                        name: None,
-                        buffer_view: None,
-                        mime_type: None,
-                        uri: Some(path),
-                        extensions: Default::default(),
-                        extras: Default::default(),
-                    },
-                    ImageInfo::Embed(path) => {
-                        // Determine the type
-                        let path = std::path::PathBuf::from(path);
-                        let mime_type =
-                            path.extension()
-                                .and_then(|ext| ext.to_str())
-                                .and_then(|ext| match ext.to_lowercase().as_str() {
-                                    "jpeg" | "jpg" => Some("image/jpeg".to_string()),
-                                    "png" => Some("image/png".to_string()),
-                                    _ => None,
-                                });
-
-                        if mime_type.is_none() {
-                            log!(warnings;
-                                "Image must be in png or jpg format: {:?}. Skipping...",
-                                &path
-                            );
-                            return None;
-                        }
-
-                        let mime_type = mime_type.unwrap();
-
-                        // Read the image directly into the buffer.
-                        if let Ok(mut file) = std::fs::File::open(&path) {
-                            use std::io::Read;
-                            let orig_len = data.len();
-                            if let Ok(bytes_read) = file.read_to_end(&mut data) {
-                                // Instead of guessing the size of the image we just wait until reading is
-                                // done.
-                                assert_eq!(bytes_read, data.len() - orig_len);
-                                let image_view = json::buffer::View::new(bytes_read, orig_len);
-                                let image_view_index = buffer_views.len();
-                                buffer_views.push(image_view);
-                                json::image::Image {
-                                    name: None,
-                                    buffer_view: json::Index::new(image_view_index as u32).into(),
-                                    mime_type: json::image::MimeType(mime_type).into(),
-                                    uri: None,
-                                    extensions: Default::default(),
-                                    extras: Default::default(),
-                                }
-                            } else {
-                                // Truncate the data vec back to original size to avoid corruption.
-                                data.resize(orig_len, 0);
-                                log!(warnings;
-                                    "Failed to read image: {:?}. Skipping...",
-                                    &path
-                                );
-                                return None;
-                            }
-                        } else {
-                            log!(warnings;
-                                "Failed to read image: {:?}. Skipping...",
-                                &path
-                            );
-                            return None;
-                        }
-                    }
-                };
-                let image_index = images.len();
-                images.push(image);
-
-                let sampler = json::texture::Sampler {
-                    mag_filter: mag_filter.into(),
-                    min_filter: min_filter.into(),
-                    wrap_s: wrap_s.into(),
-                    wrap_t: wrap_t.into(),
-                    name: None,
-                    extensions: Default::default(),
-                    extras: Default::default(),
-                };
-                let sampler_index = samplers.len();
-                samplers.push(sampler);
-
-                Some(json::texture::Texture {
-                    source: json::Index::new(image_index as u32),
-                    sampler: json::Index::new(sampler_index as u32).into(),
-                    name: None,
-                    extensions: Default::default(),
-                    extras: Default::default(),
-                })
-            },
-        )
-        .collect();
+    let TextureData {
+        samplers,
+        images,
+        textures,
+    } = build_texture_data(textures, &mut data, &mut buffer_views, &mut warnings);
 
     pb.finish_with_message("Done constructing glTF");
 
