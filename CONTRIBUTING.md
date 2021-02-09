@@ -1,3 +1,12 @@
+# Contributing to gltfgen
+
+Thank you for your interest in contributing to gltfgen!
+
+Feature requests, bug reports and pull requests are all welcome.
+
+If you are looking for support for a new input file format, please provide a sample file and a
+brief description of how you expect it to be represented by glTF.
+
 ## Developer Certificate of Origin + License
 
 The term You is used here as defined in the

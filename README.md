@@ -3,7 +3,6 @@
 A command line tool for generating glTF 2.0 animations from numbered sequences of mesh files.
 
 [![On crates.io](https://img.shields.io/crates/v/gltfgen.svg)](https://crates.io/crates/gltfgen)
-[![Travis Build status](https://travis-ci.org/elrnv/gltfgen.svg?branch=master)](https://travis-ci.org/elrnv/gltfgen)
 [![GHA Build status](https://github.com/elrnv/gltfgen/workflows/CI/badge.svg)](https://github.com/elrnv/gltfgen/actions?query=workflow%3ACI)
 
 
@@ -58,7 +57,8 @@ Alternatively, to specify a time step like 0.01 seconds between frames, use the 
 
 ## Input Types
 
- - Unstructured Legacy VTK polygon and tetrahedral meshes in double or float format.
+ - Legacy and XML VTK polygon and tetrahedral meshes in double or float format.
+   In particular unstructured grids and polygon VTK formats are supported.
    Tetrahedral VTK meshes are converted to triangle meshes on the fly.
  - Basic wavefront obj files containing polygon meshes (no .mtl support yet).
  - JPEG and PNG image textures are supported.
@@ -80,8 +80,12 @@ Alternatively, to specify a time step like 0.01 seconds between frames, use the 
     - texture attributes,
     - custom attributes,
  - Full support for textures.
- - Material attribute on vtk primitives is used to reference specific materials
+ - Material attribute on VTK primitives is used to reference specific materials
    provided on the command line.
+
+# Changelog
+
+Please see [CHANGELOG.md](CHANGELOG.md) for updates.
 
 # License
 
