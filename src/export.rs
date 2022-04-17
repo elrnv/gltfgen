@@ -8,9 +8,9 @@ use json::accessor::ComponentType as GltfComponentType;
 use json::accessor::Type as GltfType;
 use json::validation::Checked::Valid; // For colouring log messages.
 
-use gut::mesh::vertex_positions::VertexPositions;
-use gut::mesh::PointCloud;
-use gut::ops::*;
+use meshx::mesh::vertex_positions::VertexPositions;
+use meshx::mesh::PointCloud;
+use meshx::ops::*;
 
 mod animation;
 mod builders;
@@ -24,7 +24,7 @@ use crate::mesh::Mesh;
 use crate::texture::*;
 use crate::utils::*;
 
-type TriMesh = gut::mesh::TriMesh<f32>;
+type TriMesh = meshx::mesh::TriMesh<f32>;
 
 #[derive(Clone)]
 enum Output {

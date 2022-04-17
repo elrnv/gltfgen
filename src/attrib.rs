@@ -1,14 +1,14 @@
 use crate::mesh::Mesh;
 use gltf::json;
-use gut::mesh::topology::{FaceIndex, VertexIndex};
-use gut::mesh::TriMesh;
 use indexmap::map::IndexMap;
+use meshx::mesh::TriMesh;
+use meshx::topology::{FaceIndex, VertexIndex};
 use serde::Deserialize;
 
 #[derive(Debug)]
 pub enum AttribError {
     InvalidTexCoordAttribType(ComponentType),
-    Mesh(gut::mesh::attrib::Error),
+    Mesh(meshx::attrib::Error),
 }
 
 impl std::error::Error for AttribError {}
@@ -26,13 +26,13 @@ impl std::fmt::Display for AttribError {
     }
 }
 
-impl From<gut::mesh::attrib::Error> for AttribError {
-    fn from(e: gut::mesh::attrib::Error) -> AttribError {
+impl From<meshx::attrib::Error> for AttribError {
+    fn from(e: meshx::attrib::Error) -> AttribError {
         AttribError::Mesh(e)
     }
 }
 
-pub type VertexAttribute = gut::mesh::attrib::Attribute<VertexIndex>;
+pub type VertexAttribute = meshx::attrib::Attribute<VertexIndex>;
 
 pub type AttribTransfer = (
     Vec<Attribute>,
@@ -46,7 +46,7 @@ fn find_material_id<I: Clone + num_traits::ToPrimitive + 'static>(
     mesh: &Mesh,
     attrib_name: &str,
 ) -> Option<u32> {
-    use gut::mesh::attrib::Attrib;
+    use meshx::attrib::Attrib;
     match mesh {
         Mesh::TriMesh(mesh) => mesh
             .attrib_iter::<I, FaceIndex>(attrib_name)
@@ -138,7 +138,7 @@ pub(crate) fn clean_attributes(
 
 /// Remove the given attribute from the mesh and return it along with its name.
 fn remove_attribute(mesh: &mut Mesh, attrib: (&String, &Type)) -> Option<Attribute> {
-    use gut::mesh::attrib::Attrib;
+    use meshx::attrib::Attrib;
     match mesh {
         Mesh::TriMesh(mesh) => mesh.remove_attrib::<VertexIndex>(&attrib.0),
         Mesh::PointCloud(mesh) => mesh.remove_attrib::<VertexIndex>(&attrib.0),
@@ -157,7 +157,7 @@ fn try_tex_coord_promote<T>(name: &str, mesh: &mut TriMesh<f32>) -> Result<(), A
 where
     T: PartialEq + Clone + std::fmt::Debug + 'static,
 {
-    use gut::mesh::attrib::AttribPromote;
+    use meshx::attrib::AttribPromote;
     let err = "Texture coordinate collisions detected. Please report this issue.";
     Ok(mesh
         .attrib_promote::<[T; 2], _>(name, |a, b| assert_eq!(&*a, b, "{}", err))
@@ -180,8 +180,8 @@ fn promote_and_remove_texture_coordinate_attribute(
     attrib: (&String, &ComponentType),
     id: usize,
 ) -> Result<TextureAttribute, AttribError> {
-    use gut::mesh::attrib::Attrib;
-    use gut::mesh::topology::FaceVertexIndex;
+    use meshx::attrib::Attrib;
+    use meshx::topology::FaceVertexIndex;
 
     if mesh.attrib_exists::<FaceVertexIndex>(&attrib.0) {
         // Split the mesh according to texture attributes such that every unique texture attribute

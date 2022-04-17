@@ -1,7 +1,7 @@
 use super::builders::*;
 use byteorder::{WriteBytesExt, LE};
 use gltf::json;
-use gut::ops::*;
+use meshx::{ops::*, bbox::BBox};
 use indicatif::ProgressBar;
 use json::accessor::ComponentType as GltfComponentType;
 use json::accessor::Type as GltfType;
@@ -98,7 +98,7 @@ pub(crate) fn build_animation(
         let disp_view_index = buffer_views.len();
         buffer_views.push(disp_view);
 
-        let mut bbox = gut::bbox::BBox::empty();
+        let mut bbox = BBox::empty();
         for disp in displacements.iter() {
             bbox.absorb(*disp);
             for &coord in disp.iter() {

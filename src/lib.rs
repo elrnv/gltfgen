@@ -47,25 +47,25 @@ pub fn load_mesh(
     config: LoadConfig,
     process_attrib_error: impl FnMut(attrib::AttribError),
 ) -> Option<(Mesh, AttribTransfer)> {
-    let mut mesh = if let Ok(polymesh) = gut::io::load_polymesh::<f64, _>(path) {
+    let mut mesh = if let Ok(polymesh) = meshx::io::load_polymesh::<f64, _>(path) {
         polymesh.into()
-    } else if let Ok(polymesh) = gut::io::load_polymesh::<f32, _>(path) {
+    } else if let Ok(polymesh) = meshx::io::load_polymesh::<f32, _>(path) {
         polymesh.into()
-    } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f64, _>(path) {
+    } else if let Ok(tetmesh) = meshx::io::load_tetmesh::<f64, _>(path) {
         let mut mesh = Mesh::from(tetmesh);
         if config.invert_tets {
             mesh.reverse();
         }
         mesh
-    } else if let Ok(tetmesh) = gut::io::load_tetmesh::<f32, _>(path) {
+    } else if let Ok(tetmesh) = meshx::io::load_tetmesh::<f32, _>(path) {
         let mut mesh = Mesh::from(tetmesh);
         if config.invert_tets {
             mesh.reverse();
         }
         mesh
-    } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f64, _>(path) {
+    } else if let Ok(ptcloud) = meshx::io::load_pointcloud::<f64, _>(path) {
         ptcloud.into()
-    } else if let Ok(ptcloud) = gut::io::load_pointcloud::<f32, _>(path) {
+    } else if let Ok(ptcloud) = meshx::io::load_pointcloud::<f32, _>(path) {
         ptcloud.into()
     } else {
         return None;

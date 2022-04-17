@@ -1,6 +1,6 @@
-use gut::mesh::topology::NumVertices;
-use gut::mesh::vertex_positions::VertexPositions;
-use gut::mesh::{PointCloud, PolyMesh, TetMesh, TriMesh};
+use meshx::mesh::vertex_positions::VertexPositions;
+use meshx::mesh::{PointCloud, PolyMesh, TetMesh, TriMesh};
+use meshx::topology::NumVertices;
 
 /// Supported output mesh types.
 #[derive(Debug)]
@@ -102,7 +102,7 @@ pub fn trimesh_f64_to_f32(mesh: TriMesh<f64>) -> TriMesh<f32> {
         attribute_value_cache,
     } = mesh;
     TriMesh {
-        vertex_positions: gut::mesh::attrib::IntrinsicAttribute::from_vec(
+        vertex_positions: meshx::attrib::IntrinsicAttribute::from_vec(
             vertex_positions
                 .iter()
                 .map(|&x| [x[0] as f32, x[1] as f32, x[2] as f32])
@@ -123,7 +123,7 @@ pub fn pointcloud_f64_to_f32(ptcloud: PointCloud<f64>) -> PointCloud<f32> {
         vertex_attributes,
     } = ptcloud;
     PointCloud {
-        vertex_positions: gut::mesh::attrib::IntrinsicAttribute::from_vec(
+        vertex_positions: meshx::attrib::IntrinsicAttribute::from_vec(
             vertex_positions
                 .iter()
                 .map(|&x| [x[0] as f32, x[1] as f32, x[2] as f32])
