@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 pub mod utils;
 #[macro_use]
 pub mod attrib;
+pub mod config;
 pub mod export;
 pub mod material;
 pub mod mesh;
@@ -90,16 +91,16 @@ pub fn load_mesh(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use gltf::Gltf;
 
     #[test]
     fn box_rotate_obj() {
-        let mesh_meta: Vec<_> = (1..=24)
+        let mesh_meta: Vec<_> = (1..=12)
             .map(|frame| {
                 let path = format!("./assets/box_rotate_{}.obj", frame);
                 (String::from("box_rotate"), frame, PathBuf::from(path))
             })
             .collect();
-        //dbg!(&mesh_meta);
 
         let attributes = AttributeInfo::default();
         let colors = AttributeInfo::default();
@@ -115,6 +116,84 @@ mod tests {
             invert_tets: false,
         };
 
-        load_meshes(mesh_meta, config);
+        let meshes = load_meshes(mesh_meta, config);
+
+        assert!(!meshes.is_empty());
+    }
+
+    #[test]
+    fn box_triangulated() {
+        let mesh_meta: Vec<_> = (1..=1)
+            .map(|frame| {
+                let path = "./assets/box_triangulated.vtk";
+                (String::from("box_triangulated"), frame, PathBuf::from(path))
+            })
+            .collect();
+
+        let attributes = AttributeInfo::default();
+        let colors = AttributeInfo::default();
+        let texcoords = TextureAttributeInfo::default();
+        let material_attribute = "mtl_id";
+
+        let config = LoadConfig {
+            attributes: &attributes,
+            colors: &colors,
+            texcoords: &texcoords,
+            material_attribute,
+            reverse: false,
+            invert_tets: false,
+        };
+
+        let meshes = load_meshes(mesh_meta, config);
+
+        assert!(!meshes.is_empty());
+    }
+
+    #[test]
+    fn multi() {
+        let mut mesh_meta = Vec::new();
+
+        // mesh_meta.extend((1..=12)
+        //     .map(|frame| {
+        //         let path = format!("./assets/box_rotate_{}.vtk", frame);
+        //         (String::from("box_rotate"), frame, PathBuf::from(path))
+        //     }));
+        // mesh_meta.extend((1..=2)
+        //     .map(|frame| {
+        //         let path = format!("./assets/tet_{}.vtk", frame);
+        //         (String::from("tet"), frame, PathBuf::from(path))
+        //     }));
+        mesh_meta.extend((1..=1).map(|frame| {
+            let path = "./assets/box_triangulated.vtk";
+            (String::from("box_triangulated"), frame, PathBuf::from(path))
+        }));
+
+        let attributes = "{\"pressure\": f32}".parse().unwrap();
+        let colors = AttributeInfo::default();
+        let texcoords = TextureAttributeInfo::default();
+        let material_attribute = "mtl_id";
+
+        let config = LoadConfig {
+            attributes: &attributes,
+            colors: &colors,
+            texcoords: &texcoords,
+            material_attribute,
+            reverse: true,
+            invert_tets: false,
+        };
+
+        let meshes = load_meshes(mesh_meta, config);
+
+        assert!(!meshes.is_empty());
+
+        let dt = 1.0 / 24.0;
+
+        let artifact = "./tests/artifacts/multi_test.glb";
+
+        export::export(meshes, artifact.into(), dt, true, Vec::new(), Vec::new());
+
+        let actual = Gltf::open(artifact).unwrap().blob;
+
+        dbg!(&actual);
     }
 }

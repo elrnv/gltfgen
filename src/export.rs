@@ -580,7 +580,7 @@ pub fn export(
                 for (Attribute { name, .. }, &attrib_acc_index) in
                     attrib_transfer.0.iter().zip(attrib_acc_indices.iter())
                 {
-                    use heck::ShoutySnakeCase;
+                    use heck::ToShoutySnakeCase;
                     map.insert(
                         Valid(json::mesh::Semantic::Extras(name.to_shouty_snake_case())),
                         json::Index::new(attrib_acc_index),
@@ -683,7 +683,7 @@ pub fn export(
 
     let root = json::Root {
         asset: json::Asset {
-            generator: Some(format!("gltfgen v{}", structopt::clap::crate_version!())),
+            generator: Some(format!("gltfgen v{}", clap::crate_version!())),
             ..Default::default()
         },
         animations,

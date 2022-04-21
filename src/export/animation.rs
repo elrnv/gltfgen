@@ -1,11 +1,11 @@
 use super::builders::*;
 use byteorder::{WriteBytesExt, LE};
 use gltf::json;
-use meshx::{ops::*, bbox::BBox};
 use indicatif::ProgressBar;
 use json::accessor::ComponentType as GltfComponentType;
 use json::accessor::Type as GltfType;
 use json::validation::Checked::Valid;
+use meshx::{bbox::BBox, ops::*};
 use std::mem;
 
 #[allow(clippy::too_many_arguments)]

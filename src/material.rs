@@ -91,7 +91,7 @@ impl Into<json::Material> for MaterialInfo {
 
         json::Material {
             name: if name.is_empty() { None } else { Some(name) },
-            alpha_cutoff: json::material::AlphaCutoff(0.5),
+            alpha_cutoff: None,
             alpha_mode: Valid(json::material::AlphaMode::Opaque),
             double_sided: false,
             pbr_metallic_roughness: json::material::PbrMetallicRoughness {

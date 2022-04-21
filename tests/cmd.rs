@@ -1,3 +1,9 @@
+//!
+//! This module tests the command line tool directly by invoking it on assests stored in the `assets` directory.
+//!
+//! What to look for in test results when evaluating regressions:
+//!   - Animated attributes are not supported yet, expect textures to stretch and color to remain constant.
+//!
 use assert_cmd::Command;
 use gltf::{Error, Gltf};
 use predicates::prelude::*;
@@ -12,6 +18,7 @@ fn box_triangulated() -> Result<(), Error> {
     let artifact = "./tests/artifacts/box_triangulated.glb";
     cmd.arg(artifact)
         .arg("./assets/{box_triangulated}.vtk")
+        .arg("-r") // reverse polygon orientation
         .arg("-a")
         .arg("{\"pressure\": f32}")
         .assert()
@@ -32,6 +39,7 @@ fn box_rotate_simple() -> Result<(), Error> {
     let artifact = "./tests/artifacts/box_rotate_simple.glb";
     cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
+        .arg("-r") // reverse polygon orientation
         .assert()
         .stderr(predicate::str::contains(stderr))
         .success();
@@ -49,6 +57,7 @@ fn box_rotate_obj() -> Result<(), Error> {
     let artifact = "./tests/artifacts/box_rotate_obj.glb";
     cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.obj")
+        .arg("-r") // reverse polygon orientation
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
         .arg("-u")
@@ -74,6 +83,7 @@ fn box_rotate() -> Result<(), Error> {
     let artifact = "./tests/artifacts/box_rotate.glb";
     cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
+        .arg("-r") // reverse polygon orientation
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
         .arg("-u")
@@ -97,6 +107,7 @@ fn box_rotate_attribs() -> Result<(), Error> {
     let artifact = "./tests/artifacts/box_rotate_pressure.glb";
     cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
+        .arg("-r") // reverse polygon orientation
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
         .arg("-u")
@@ -124,6 +135,7 @@ fn box_rotate_attribs_gltf() -> Result<(), Error> {
     let artifact = "./tests/artifacts/box_rotate_pressure.gltf";
     cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
+        .arg("-r") // reverse polygon orientation
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
         .arg("-u")
@@ -133,7 +145,7 @@ fn box_rotate_attribs_gltf() -> Result<(), Error> {
         .arg("-c")
         .arg("{\"Cd\": vec3(f32)}")
         .arg("-m")
-        .arg("(name:\"checkerboard\")")
+        .arg("(name:\"checkerboard\", base_texture:(index:0,texcoord:0))")
         .assert()
         .stderr(b"" as &[u8]) // No errors
         .success();
@@ -167,13 +179,14 @@ fn tet() -> Result<(), Error> {
 
 #[test]
 fn multi() -> Result<(), Error> {
-    // Capture both tet and box_rotate animations in one glb fle.
+    // Capture both tet and box_rotate animations in one glb file.
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let warning1 = "Material ID was found but no materials were specified.";
     let warning2 = "Path 'assets/box_triangulated.vtk' skipped since regex '^assets/([^/]*)_(?P<frame>[0-9]+)\\.vtk$' did not match.";
     let artifact = "./tests/artifacts/multi.glb";
     cmd.arg(artifact)
         .arg("./assets/{*}_#.vtk")
+        .arg("-r") // reverse polygon orientation
         .arg("-a")
         .arg("{\"pressure\": f32}")
         .assert()
