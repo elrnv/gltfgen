@@ -97,13 +97,19 @@ enum Error {
     GlobPattern(#[from] glob::PatternError),
     #[error("No valid meshes were found")]
     NoMeshesFound,
-    #[error("Configuration load error")]
+    #[error("Configuration load error: {}", .0)]
     ConfigLoad(#[from] std::io::Error),
-    #[error("Configuration deserialization error")]
-    ConfigDeserialize,
+    #[error("Configuration deserialization error: {}", .0)]
+    ConfigDeserialize(#[from] ron::Error),
 }
 
-fn main() -> Result<(), Error> {
+fn main() {
+    if let Err(err) = try_main() {
+        eprintln!("{}", err);
+        std::process::exit(1); // Non-zero value indicating that an error occurred.
+    }
+}
+fn try_main() -> Result<(), Error> {
     let opt = Opt::parse();
 
     // Try to load the config file if specified.
@@ -111,7 +117,7 @@ fn main() -> Result<(), Error> {
         use std::fs::File;
         File::open(path).map_err(Error::from).and_then(|f| {
             let reader = BufReader::new(f);
-            ron::de::from_reader(reader).map_err(|_| Error::ConfigDeserialize)
+            Ok(ron::de::from_reader(reader)?)
         })?
     } else {
         opt.config

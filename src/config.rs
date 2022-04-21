@@ -3,6 +3,16 @@ use serde::Deserialize;
 
 use crate::{AttributeInfo, MaterialInfo, TextureAttributeInfo, TextureInfo};
 
+fn default_fps() -> usize {
+    24
+}
+fn default_step() -> usize {
+    1
+}
+fn default_mtl_id() -> String {
+    "mtl_id".to_string()
+}
+
 #[derive(Parser, Debug, Deserialize)]
 pub struct Config {
     /// Frames per second.
@@ -10,6 +20,7 @@ pub struct Config {
     /// 1/fps gives the time step between discrete frames. If 'time_step' is also provided, this
     /// parameter is ignored.
     #[clap(value_name = "FPS", short, long, default_value = "24")]
+    #[serde(default = "default_fps")]
     pub fps: usize,
 
     /// Time step in seconds between discrete frames.
@@ -21,10 +32,12 @@ pub struct Config {
 
     /// Reverse polygon orientations on output meshes.
     #[clap(short, long)]
+    #[serde(default)]
     pub reverse: bool,
 
     /// Invert tetrahedra orientations on input meshes.
     #[clap(short, long)]
+    #[serde(default)]
     pub invert_tets: bool,
 
     /// Step by the given number of frames.
@@ -37,6 +50,7 @@ pub struct Config {
     /// 4, 7, and 10.
     ///
     #[clap(value_name = "STEPS", short, long, default_value = "1")]
+    #[serde(default = "default_step")]
     pub step: usize,
 
     /// A dictionary of color attributes and their types.
@@ -71,6 +85,7 @@ pub struct Config {
     /// '{"diffuse": Vec3(f32), "bump": Vec3(F32)}'
     ///
     #[clap(value_name = "ATTRIBS", short, long, default_value = "{}")]
+    #[serde(default)]
     pub colors: AttributeInfo,
 
     /// A dictionary of custom vertex attributes and their types.
@@ -119,6 +134,7 @@ pub struct Config {
     /// '{"temperature":F32, "force":Vec3(F32), "material":Scalar(u32)}'
     ///
     #[clap(value_name = "ATTRIBS", short, long, default_value = "{}")]
+    #[serde(default)]
     pub attributes: AttributeInfo,
 
     /// A dictionary of texture coordinate attributes and their types.
@@ -150,6 +166,7 @@ pub struct Config {
     /// '{"uv": f32, "bump": F32}'
     ///
     #[clap(value_name = "TEXCOORDS", short = 'u', long, default_value = "{}")]
+    #[serde(default)]
     pub texcoords: TextureAttributeInfo,
 
     /// A tuple of texture parameters.
@@ -197,6 +214,7 @@ pub struct Config {
     /// Repeat wrap_t: mirrored_repeat)'
     ///
     #[clap(value_name = "TEXTURES", short = 'x', long)]
+    #[serde(default)]
     pub textures: Vec<TextureInfo>,
 
     /// A tuple of material properties.
@@ -234,6 +252,7 @@ pub struct Config {
     /// metallic factor.
     ///
     #[clap(value_name = "MATERIALS", short, long)]
+    #[serde(default)]
     pub materials: Vec<MaterialInfo>,
 
     /// Name of the material attribute on mesh faces or cells.
@@ -244,5 +263,6 @@ pub struct Config {
     /// the '-m' or '--materials' flag.
     ///
     #[clap(value_name = "MTL-ATTRIB", short = 'e', long, default_value = "mtl_id")]
+    #[serde(default = "default_mtl_id")]
     pub material_attribute: String,
 }
