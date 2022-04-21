@@ -19,9 +19,9 @@ pub enum MagFilter {
     None,
 }
 
-impl Into<Option<Checked<json::texture::MagFilter>>> for MagFilter {
-    fn into(self) -> Option<Checked<json::texture::MagFilter>> {
-        match self {
+impl From<MagFilter> for Option<Checked<json::texture::MagFilter>> {
+    fn from(mf: MagFilter) -> Option<Checked<json::texture::MagFilter>> {
+        match mf {
             MagFilter::Nearest => Some(Checked::Valid(json::texture::MagFilter::Nearest)),
             MagFilter::Linear => Some(Checked::Valid(json::texture::MagFilter::Linear)),
             MagFilter::None => None,
@@ -59,9 +59,9 @@ pub enum MinFilter {
     None,
 }
 
-impl Into<Option<Checked<json::texture::MinFilter>>> for MinFilter {
-    fn into(self) -> Option<Checked<json::texture::MinFilter>> {
-        match self {
+impl From<MinFilter> for Option<Checked<json::texture::MinFilter>> {
+    fn from(mf: MinFilter) -> Option<Checked<json::texture::MinFilter>> {
+        match mf {
             MinFilter::Nearest => Some(Checked::Valid(json::texture::MinFilter::Nearest)),
             MinFilter::Linear => Some(Checked::Valid(json::texture::MinFilter::Linear)),
             MinFilter::NearestMipmapNearest => Some(Checked::Valid(
@@ -101,9 +101,9 @@ pub enum WrappingMode {
     Repeat,
 }
 
-impl Into<Checked<json::texture::WrappingMode>> for WrappingMode {
-    fn into(self) -> Checked<json::texture::WrappingMode> {
-        match self {
+impl From<WrappingMode> for Checked<json::texture::WrappingMode> {
+    fn from(wm: WrappingMode) -> Checked<json::texture::WrappingMode> {
+        match wm {
             WrappingMode::ClampToEdge => Checked::Valid(json::texture::WrappingMode::ClampToEdge),
             WrappingMode::MirroredRepeat => {
                 Checked::Valid(json::texture::WrappingMode::MirroredRepeat)

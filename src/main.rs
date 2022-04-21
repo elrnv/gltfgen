@@ -129,13 +129,13 @@ fn try_main() -> Result<(), Error> {
         &opt.pattern[..]
     };
 
-    let regex = glob_to_regex(&pattern);
+    let regex = glob_to_regex(pattern);
     let pattern = remove_braces(
         &pattern
             .replace("*#*", "*")
             .replace("*#", "*")
             .replace("#*", "*")
-            .replace("#", "*"),
+            .replace('#', "*"),
     );
     let glob_options = glob::MatchOptions {
         case_sensitive: true,
@@ -147,7 +147,7 @@ fn try_main() -> Result<(), Error> {
 
     pb.set_prefix("Looking for files");
 
-    let entries: Vec<_> = glob::glob_with(&pattern, glob_options)?.collect();
+    let entries = glob::glob_with(&pattern, glob_options)?;
 
     // First parse entries and retrieve the necessary data before building the meshes.
     // This will allow us to prune skipped frames before actually building meshes.
@@ -157,7 +157,6 @@ fn try_main() -> Result<(), Error> {
     let mut warnings = Vec::new();
 
     let mut mesh_meta: Vec<_> = entries
-        .into_iter()
         .filter_map(|entry| {
             entry.ok().and_then(|path| {
                 pb.tick();
@@ -191,10 +190,13 @@ fn try_main() -> Result<(), Error> {
 
                 // Find a unique name for this mesh in the filename.
                 let mut name = String::new();
-                for cap in caps.iter().skip(1).filter(|&cap| cap != frame_cap) {
-                    if let Some(cap) = cap {
-                        name.push_str(cap.as_str());
-                    }
+                for cap in caps
+                    .iter()
+                    .skip(1)
+                    .filter(|&cap| cap != frame_cap)
+                    .flatten()
+                {
+                    name.push_str(cap.as_str());
                 }
                 Some((name, frame, path))
             })

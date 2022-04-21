@@ -24,8 +24,6 @@ use crate::mesh::Mesh;
 use crate::texture::*;
 use crate::utils::*;
 
-type TriMesh = meshx::mesh::TriMesh<f32>;
-
 #[derive(Clone)]
 enum Output {
     Standard {
@@ -281,7 +279,7 @@ pub fn export(
 ) {
     meshes.sort_by(|(name_a, frame_a, _, _), (name_b, frame_b, _, _)| {
         // First sort by name
-        name_a.cmp(name_b).then(frame_a.cmp(&frame_b))
+        name_a.cmp(name_b).then(frame_a.cmp(frame_b))
     });
 
     // Convert sequence of meshes into meshes with morph targets by erasing repeating topology
@@ -318,20 +316,16 @@ pub fn export(
     {
         let bbox = mesh.bounding_box();
 
-        let (vertex_positions, indices) = match mesh {
-            Mesh::TriMesh(TriMesh {
-                vertex_positions,
-                indices,
-                ..
-            }) => {
+        let (vertex_positions, indices) = match &mesh {
+            Mesh::TriMesh(trimesh) => {
                 // Push indices to data buffer.
-                let num_indices = indices.len() * 3;
+                let num_indices = trimesh.indices.len() * 3;
                 let byte_length = num_indices * mem::size_of::<u32>();
                 let indices_view = json::buffer::View::new(byte_length, data.len())
                     .with_target(json::buffer::Target::ElementArrayBuffer);
 
                 let mut max_index = 0;
-                for idx in indices.into_iter() {
+                for idx in trimesh.indices.iter() {
                     for &i in idx.iter() {
                         max_index = max_index.max(i as u32);
                         data.write_u32::<LE>(i as u32).unwrap();
@@ -345,7 +339,10 @@ pub fn export(
                 buffer_views.push(indices_view);
                 let idx_acc_index = accessors.len() as u32;
                 accessors.push(idx_acc);
-                (vertex_positions, Some(json::Index::new(idx_acc_index)))
+                (
+                    &trimesh.vertex_positions,
+                    Some(json::Index::new(idx_acc_index)),
+                )
             }
             Mesh::PointCloud(PointCloud {
                 vertex_positions, ..
@@ -406,22 +403,22 @@ pub fn export(
 
                 match attrib.type_ {
                     Type::Vec3(ComponentType::U8) => {
-                        write_color_attribute_data::<[u8; 3]>(&mut data, &attrib)
+                        write_color_attribute_data::<[u8; 3]>(&mut data, attrib)
                     }
                     Type::Vec3(ComponentType::U16) => {
-                        write_color_attribute_data::<[u16; 3]>(&mut data, &attrib)
+                        write_color_attribute_data::<[u16; 3]>(&mut data, attrib)
                     }
                     Type::Vec3(ComponentType::F32) => {
-                        write_color_attribute_data::<[f32; 3]>(&mut data, &attrib)
+                        write_color_attribute_data::<[f32; 3]>(&mut data, attrib)
                     }
                     Type::Vec4(ComponentType::U8) => {
-                        write_color_attribute_data::<[u8; 4]>(&mut data, &attrib)
+                        write_color_attribute_data::<[u8; 4]>(&mut data, attrib)
                     }
                     Type::Vec4(ComponentType::U16) => {
-                        write_color_attribute_data::<[u16; 4]>(&mut data, &attrib)
+                        write_color_attribute_data::<[u16; 4]>(&mut data, attrib)
                     }
                     Type::Vec4(ComponentType::F32) => {
-                        write_color_attribute_data::<[f32; 4]>(&mut data, &attrib)
+                        write_color_attribute_data::<[f32; 4]>(&mut data, attrib)
                     }
                     // This must have been checked above.
                     _ => unreachable!(),
@@ -452,7 +449,7 @@ pub fn export(
                 let attrib_view_index = buffer_views.len();
                 buffer_views.push(attrib_view);
 
-                call_typed_fn!(attrib.type_ => self::write_attribute_data::<_>(&mut data, &attrib));
+                call_typed_fn!(attrib.type_ => self::write_attribute_data::<_>(&mut data, attrib));
 
                 let (type_, component_type) = attrib.type_.into();
                 let attrib_acc = json::Accessor::new(attrib.attribute.len(), component_type)
@@ -489,9 +486,9 @@ pub fn export(
                 // First let's try to write the data to flush out any problems before appending the
                 // buffer view. This way we can bail early without having to roll back state.
                 match attrib.component_type {
-                    ComponentType::U8 => write_tex_attribute_data::<u8>(&mut data, &attrib),
-                    ComponentType::U16 => write_tex_attribute_data::<u16>(&mut data, &attrib),
-                    ComponentType::F32 => write_tex_attribute_data::<f32>(&mut data, &attrib),
+                    ComponentType::U8 => write_tex_attribute_data::<u8>(&mut data, attrib),
+                    ComponentType::U16 => write_tex_attribute_data::<u16>(&mut data, attrib),
+                    ComponentType::F32 => write_tex_attribute_data::<f32>(&mut data, attrib),
                     // Other cases must have caused a return in the match above.
                     _ => {
                         unreachable!()

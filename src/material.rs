@@ -19,9 +19,9 @@ impl TextureRef {
     }
 }
 
-impl Into<Option<(u32, u32)>> for TextureRef {
-    fn into(self) -> Option<(u32, u32)> {
-        match self {
+impl From<TextureRef> for Option<(u32, u32)> {
+    fn from(tr: TextureRef) -> Option<(u32, u32)> {
+        match tr {
             TextureRef::Some { index, texcoord } => Some((index, texcoord)),
             TextureRef::None => None,
         }
@@ -79,15 +79,15 @@ impl std::str::FromStr for MaterialInfo {
     }
 }
 
-impl Into<json::Material> for MaterialInfo {
-    fn into(self) -> json::Material {
+impl From<MaterialInfo> for json::Material {
+    fn from(mi: MaterialInfo) -> json::Material {
         let MaterialInfo {
             name,
             base_color,
             base_texture,
             metallic,
             roughness,
-        } = self;
+        } = mi;
 
         json::Material {
             name: if name.is_empty() { None } else { Some(name) },

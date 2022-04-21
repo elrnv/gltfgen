@@ -5,7 +5,7 @@ use meshx::topology::NumVertices;
 /// Supported output mesh types.
 #[derive(Debug)]
 pub enum Mesh {
-    TriMesh(TriMesh<f32>),
+    TriMesh(Box<TriMesh<f32>>),
     PointCloud(PointCloud<f32>),
 }
 
@@ -57,25 +57,25 @@ impl VertexPositions for Mesh {
 
 impl From<PolyMesh<f32>> for Mesh {
     fn from(mesh: PolyMesh<f32>) -> Self {
-        Mesh::TriMesh(TriMesh::<f32>::from(mesh))
+        Mesh::TriMesh(Box::new(TriMesh::<f32>::from(mesh)))
     }
 }
 
 impl From<PolyMesh<f64>> for Mesh {
     fn from(mesh: PolyMesh<f64>) -> Self {
-        Mesh::TriMesh(trimesh_f64_to_f32(TriMesh::from(mesh)))
+        Mesh::TriMesh(Box::new(trimesh_f64_to_f32(TriMesh::from(mesh))))
     }
 }
 
 impl From<TetMesh<f32>> for Mesh {
     fn from(mesh: TetMesh<f32>) -> Self {
-        Mesh::TriMesh(mesh.surface_trimesh())
+        Mesh::TriMesh(Box::new(mesh.surface_trimesh()))
     }
 }
 
 impl From<TetMesh<f64>> for Mesh {
     fn from(mesh: TetMesh<f64>) -> Self {
-        Mesh::TriMesh(trimesh_f64_to_f32(mesh.surface_trimesh()))
+        Mesh::TriMesh(Box::new(trimesh_f64_to_f32(mesh.surface_trimesh())))
     }
 }
 

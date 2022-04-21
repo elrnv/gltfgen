@@ -140,8 +140,8 @@ pub(crate) fn clean_attributes(
 fn remove_attribute(mesh: &mut Mesh, attrib: (&String, &Type)) -> Option<Attribute> {
     use meshx::attrib::Attrib;
     match mesh {
-        Mesh::TriMesh(mesh) => mesh.remove_attrib::<VertexIndex>(&attrib.0),
-        Mesh::PointCloud(mesh) => mesh.remove_attrib::<VertexIndex>(&attrib.0),
+        Mesh::TriMesh(mesh) => mesh.remove_attrib::<VertexIndex>(attrib.0),
+        Mesh::PointCloud(mesh) => mesh.remove_attrib::<VertexIndex>(attrib.0),
     }
     .ok()
     .map(|a| Attribute {
@@ -183,24 +183,24 @@ fn promote_and_remove_texture_coordinate_attribute(
     use meshx::attrib::Attrib;
     use meshx::topology::FaceVertexIndex;
 
-    if mesh.attrib_exists::<FaceVertexIndex>(&attrib.0) {
+    if mesh.attrib_exists::<FaceVertexIndex>(attrib.0) {
         // Split the mesh according to texture attributes such that every unique texture attribute
         // value will have its own unique vertex. This is required since gltf doesn't support multiple
         // topologies.
 
-        mesh.split_vertices_by_face_vertex_attrib(&attrib.0);
+        mesh.split_vertices_by_face_vertex_attrib(attrib.0);
 
         match *attrib.1 {
-            ComponentType::U8 => try_tex_coord_promote::<u8>(&attrib.0, mesh),
-            ComponentType::U16 => try_tex_coord_promote::<u16>(&attrib.0, mesh),
-            ComponentType::F32 => try_tex_coord_promote::<f32>(&attrib.0, mesh),
+            ComponentType::U8 => try_tex_coord_promote::<u8>(attrib.0, mesh),
+            ComponentType::U16 => try_tex_coord_promote::<u16>(attrib.0, mesh),
+            ComponentType::F32 => try_tex_coord_promote::<f32>(attrib.0, mesh),
             t => Err(AttribError::InvalidTexCoordAttribType(t)),
         }?;
     }
 
     // The attribute has been promoted, remove it from the mesh for later use.
     Ok(mesh
-        .remove_attrib::<VertexIndex>(&attrib.0)
+        .remove_attrib::<VertexIndex>(attrib.0)
         .map(|a| TextureAttribute {
             id: id as u32,
             name: attrib.0.clone(),
@@ -308,9 +308,9 @@ pub enum ComponentType {
     F32,
 }
 
-impl Into<json::accessor::ComponentType> for ComponentType {
-    fn into(self) -> json::accessor::ComponentType {
-        match self {
+impl From<ComponentType> for json::accessor::ComponentType {
+    fn from(t: ComponentType) -> json::accessor::ComponentType {
+        match t {
             ComponentType::I8 => json::accessor::ComponentType::I8,
             ComponentType::U8 => json::accessor::ComponentType::U8,
             ComponentType::I16 => json::accessor::ComponentType::I16,
@@ -364,9 +364,9 @@ pub enum Type {
     Mat4(ComponentType),
 }
 
-impl Into<(json::accessor::Type, json::accessor::ComponentType)> for Type {
-    fn into(self) -> (json::accessor::Type, json::accessor::ComponentType) {
-        let type_ = match self {
+impl From<Type> for (json::accessor::Type, json::accessor::ComponentType) {
+    fn from(t: Type) -> (json::accessor::Type, json::accessor::ComponentType) {
+        let type_ = match t {
             Type::I8
             | Type::U8
             | Type::I16
@@ -382,7 +382,7 @@ impl Into<(json::accessor::Type, json::accessor::ComponentType)> for Type {
             Type::Mat4(_) => json::accessor::Type::Mat4,
         };
 
-        let component_type = match self {
+        let component_type = match t {
             Type::I8 => json::accessor::ComponentType::I8,
             Type::U8 => json::accessor::ComponentType::U8,
             Type::I16 => json::accessor::ComponentType::I16,
