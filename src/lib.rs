@@ -1,5 +1,8 @@
 use std::path::{Path, PathBuf};
 
+use meshx::algo::Merge;
+use rayon::prelude::*;
+
 #[macro_use]
 pub mod utils;
 #[macro_use]
@@ -15,9 +18,7 @@ pub use material::*;
 pub use texture::*;
 pub use utils::*;
 
-use mesh::Mesh;
-
-use rayon::prelude::*;
+use mesh::{trimesh_f64_to_f32, Mesh};
 
 #[derive(Clone, Copy, Debug)]
 pub struct LoadConfig<'a> {
@@ -48,29 +49,40 @@ pub fn load_mesh(
     config: LoadConfig,
     process_attrib_error: impl FnMut(attrib::AttribError),
 ) -> Option<(Mesh, AttribTransfer)> {
-    let mut mesh = if let Ok(polymesh) = meshx::io::load_polymesh::<f64, _>(path) {
-        polymesh.into()
+    let polymesh_tris = if let Ok(polymesh) = meshx::io::load_polymesh::<f64, _>(path) {
+        trimesh_f64_to_f32(meshx::TriMesh::from(polymesh))
     } else if let Ok(polymesh) = meshx::io::load_polymesh::<f32, _>(path) {
-        polymesh.into()
-    } else if let Ok(tetmesh) = meshx::io::load_tetmesh::<f64, _>(path) {
-        let mut mesh = Mesh::from(tetmesh);
-        if config.invert_tets {
-            mesh.reverse();
-        }
-        mesh
-    } else if let Ok(tetmesh) = meshx::io::load_tetmesh::<f32, _>(path) {
-        let mut mesh = Mesh::from(tetmesh);
-        if config.invert_tets {
-            mesh.reverse();
-        }
-        mesh
-    } else if let Ok(ptcloud) = meshx::io::load_pointcloud::<f64, _>(path) {
-        ptcloud.into()
-    } else if let Ok(ptcloud) = meshx::io::load_pointcloud::<f32, _>(path) {
-        ptcloud.into()
+        meshx::TriMesh::<f32>::from(polymesh)
     } else {
-        return None;
+        meshx::TriMesh::default()
     };
+
+    let mut tetmesh_tris = if let Ok(tetmesh) = meshx::io::load_tetmesh::<f64, _>(path) {
+        trimesh_f64_to_f32(tetmesh.surface_trimesh())
+    } else if let Ok(tetmesh) = meshx::io::load_tetmesh::<f32, _>(path) {
+        meshx::TriMesh::<f32>::from(tetmesh.surface_trimesh())
+    } else {
+        meshx::TriMesh::default()
+    };
+
+    // Reverse triangles that came from tets. This is faster than actually inverting tets but
+    // achieves the same result.
+    if config.invert_tets {
+        tetmesh_tris.reverse();
+    }
+
+    tetmesh_tris.merge(polymesh_tris);
+    let mut mesh = Mesh::from(tetmesh_tris);
+
+    if mesh.is_empty() {
+        mesh = if let Ok(ptcloud) = meshx::io::load_pointcloud::<f64, _>(path) {
+            ptcloud.into()
+        } else if let Ok(ptcloud) = meshx::io::load_pointcloud::<f32, _>(path) {
+            ptcloud.into()
+        } else {
+            return None;
+        };
+    }
 
     if config.reverse {
         mesh.reverse();

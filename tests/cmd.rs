@@ -178,6 +178,26 @@ fn tet() -> Result<(), Error> {
 }
 
 #[test]
+fn tet_and_tri() -> Result<(), Error> {
+    let mut cmd = Command::cargo_bin("gltfgen").unwrap();
+    let warning = "Material ID was found but no materials were specified.";
+    let artifact = "./tests/artifacts/tet_and_tri.glb";
+    cmd.arg(artifact)
+        .arg("./assets/{tet_and_tri}_#.vtk")
+        .arg("-a")
+        .arg("{\"pressure\": f32}")
+        .assert()
+        .stderr(predicate::str::contains(warning))
+        .success();
+
+    let expected = Gltf::open("./assets/tet_and_tri_expected.glb")?;
+    let actual = Gltf::open(artifact)?;
+
+    assert_eq_gltf_with_bytes(&expected, &actual);
+    Ok(())
+}
+
+#[test]
 fn multi() -> Result<(), Error> {
     // Capture both tet and box_rotate animations in one glb file.
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
