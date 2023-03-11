@@ -56,7 +56,7 @@ $ gltfgen -u '{\"uv\":f32}' \\
 #[clap(after_long_help(EXAMPLES))]
 struct Opt {
     /// Output glTF file.
-    #[clap(name = "OUTPUT", parse(from_os_str))]
+    #[clap(name = "OUTPUT")]
     output: PathBuf,
 
     /// A glob pattern matching input mesh files.
@@ -72,7 +72,7 @@ struct Opt {
     /// strings within will be concatenated to produce a unique name.  Note that
     /// for the time being, '{' '}' are ignored when the glob pattern is
     /// matched.
-    #[clap(name = "PATTERN", parse(from_str))]
+    #[clap(name = "PATTERN")]
     pattern: String,
 
     /// Silence all output.
@@ -85,7 +85,7 @@ struct Opt {
     /// A path to the configuration file specifying how glTF files should be built.
     ///
     /// If specified, all command line configuration is ignored.
-    #[clap(name = "CONFIG", long = "config", parse(from_os_str))]
+    #[clap(name = "CONFIG", long = "config")]
     config_path: Option<PathBuf>,
 }
 
@@ -100,7 +100,7 @@ enum Error {
     #[error("Configuration load error: {}", .0)]
     ConfigLoad(#[from] std::io::Error),
     #[error("Configuration deserialization error: {}", .0)]
-    ConfigDeserialize(#[from] ron::Error),
+    ConfigDeserialize(#[from] ron::error::SpannedError),
 }
 
 fn main() {

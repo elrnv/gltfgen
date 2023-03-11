@@ -141,7 +141,7 @@ pub enum ImageInfo {
 impl std::str::FromStr for TextureInfo {
     type Err = ron::de::Error;
     fn from_str(input: &str) -> Result<TextureInfo, Self::Err> {
-        ron::de::from_str::<TextureInfo>(input)
+        ron::de::from_str::<TextureInfo>(input).map_err(Self::Err::from)
     }
 }
 

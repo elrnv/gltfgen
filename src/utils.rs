@@ -107,8 +107,9 @@ pub fn new_progress_bar(quiet: bool, len: usize) -> ProgressBar {
     if !quiet {
         ProgressBar::new(len as u64).with_style(
             ProgressStyle::default_bar()
+                .progress_chars("=> ")
                 .template("{elapsed:4} [{bar:20.cyan/blue}] {pos:>7}/{len:7} {msg}")
-                .progress_chars("=> "),
+                .expect("Failed to render the progress bar."),
         )
     } else {
         ProgressBar::hidden()
@@ -119,8 +120,9 @@ pub fn new_progress_bar_file(quiet: bool, num_bytes: usize) -> ProgressBar {
     if !quiet {
         ProgressBar::new(num_bytes as u64).with_style(
             ProgressStyle::default_bar()
+                .progress_chars("=> ")
                 .template("{elapsed:4} [{bar:20.green}] {percent:>7}%        {msg}")
-                .progress_chars("=> "),
+                .expect("Failed to render the progress bar."),
         )
     } else {
         ProgressBar::hidden()
@@ -131,12 +133,13 @@ pub fn new_spinner(quiet: bool) -> ProgressBar {
     let spinner = if !quiet {
         ProgressBar::new_spinner().with_style(
             ProgressStyle::default_spinner()
+                .tick_chars("⣾⣽⣻⢿⡿⣟⣯⣷")
                 .template("{elapsed:4} {spinner:1.cyan/blue} {prefix:32.cyan/blue}     {wide_msg}")
-                .tick_chars("⣾⣽⣻⢿⡿⣟⣯⣷"),
+                .expect("Failed to render the progress bar."),
         )
     } else {
         ProgressBar::hidden()
     };
-    spinner.enable_steady_tick(100);
+    spinner.enable_steady_tick(std::time::Duration::from_millis(100));
     spinner
 }

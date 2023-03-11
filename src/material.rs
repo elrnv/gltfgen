@@ -75,7 +75,7 @@ impl Default for MaterialInfo {
 impl std::str::FromStr for MaterialInfo {
     type Err = ron::de::Error;
     fn from_str(input: &str) -> Result<MaterialInfo, Self::Err> {
-        ron::de::from_str::<MaterialInfo>(input)
+        ron::de::from_str::<MaterialInfo>(input).map_err(Self::Err::from)
     }
 }
 

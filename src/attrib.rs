@@ -425,7 +425,8 @@ impl Default for AttributeInfo {
 impl std::str::FromStr for AttributeInfo {
     type Err = ron::de::Error;
     fn from_str(input: &str) -> Result<AttributeInfo, Self::Err> {
-        let idx_map: Result<IndexMap<String, Type>, Self::Err> = ron::de::from_str(input);
+        let idx_map: Result<IndexMap<String, Type>, Self::Err> =
+            ron::de::from_str(input).map_err(Self::Err::from);
         idx_map.map(AttributeInfo)
     }
 }
@@ -433,7 +434,8 @@ impl std::str::FromStr for AttributeInfo {
 impl std::str::FromStr for TextureAttributeInfo {
     type Err = ron::de::Error;
     fn from_str(input: &str) -> Result<TextureAttributeInfo, Self::Err> {
-        let idx_map: Result<IndexMap<String, ComponentType>, Self::Err> = ron::de::from_str(input);
+        let idx_map: Result<IndexMap<String, ComponentType>, Self::Err> =
+            ron::de::from_str(input).map_err(Self::Err::from);
         idx_map.map(TextureAttributeInfo)
     }
 }

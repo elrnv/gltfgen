@@ -2,7 +2,7 @@
 name = "gltfgen"
 version = "0.6.1"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
-edition = "2018"
+edition = "2021"
 
 description = "Command line tool for generating glTF 2.0 animations from numbered sequences of mesh files."
 documentation = "https://github.com/elrnv/gltfgen"
