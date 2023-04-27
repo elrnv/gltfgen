@@ -46,9 +46,11 @@ use the `-x` option to specify the image to be used, and the `-m` option to crea
 material that binds the image to the texture coordinates:
 
 $ gltfgen -u '{\"uv\":f32}' \\
-          -x '(image: Embed(\"./texture.png\")` \\
-          -m '(name:\"texture\", base_texture:{index:0,texcoord:0)) \\
+          -x '(image: Embed(\"./texture.png\")' \\
+          -m '(name:\"texture\", base_texture:(index:0,texcoord:0))' \\
           output.glb \"./meshes/animation_#.vtk\"
+
+NOTE: In PowerShell, double quotes should be doubled.
 ";
 
 #[derive(Parser, Debug)]

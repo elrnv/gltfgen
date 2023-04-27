@@ -116,7 +116,7 @@ fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -
             } = *out.last_mut().unwrap();
             if mesh.eq_topo(&next_mesh)
                 && name == &next_name
-                && attrib_transfer.3 == next_attrib_transfer.3
+                && attrib_transfer.material_id == next_attrib_transfer.material_id
             // same material
             {
                 // Same topology, convert positions to displacements.
@@ -147,6 +147,18 @@ struct TextureData {
     samplers: Vec<json::texture::Sampler>,
     images: Vec<json::image::Image>,
     textures: Vec<json::texture::Texture>,
+}
+
+fn process_auto_textures(textures: &mut [TextureInfo], output: &Output) {
+    // Process auto textures.
+    for tex in textures.iter_mut() {
+        if let &ImageInfo::Auto = &tex.image {
+            match output {
+                Output::Binary { .. } => *tex.image = ImageInfo::Embed(),
+                Output::Standard { .. } => *tex.image = ImageInfo::Uri(),
+            }
+        }
+    }
 }
 
 fn build_texture_data(
@@ -235,6 +247,8 @@ fn build_texture_data(
                             return None;
                         }
                     }
+                    // All Auto images should have been converted to either Embed or Uri, by this point.
+                    ImageInfo::Auto => unreachable!(),
                 };
                 let image_index = images.len();
                 images.push(image);
@@ -374,7 +388,7 @@ pub fn export(
 
         // Push color vertex attribute
         let color_attrib_acc_indices: Vec<_> = attrib_transfer
-            .1
+            .color_attribs_to_keep
             .iter()
             .filter_map(|attrib| {
                 let num_bytes = match attrib.type_ {
@@ -438,7 +452,7 @@ pub fn export(
 
         // Push custom vertex attributes to data buffer.
         let attrib_acc_indices: Vec<_> = attrib_transfer
-            .0
+            .attribs_to_keep
             .iter()
             .map(|attrib| {
                 let byte_length = attrib.attribute.data.direct_data().unwrap().byte_len();
@@ -465,7 +479,7 @@ pub fn export(
 
         // Push texture coordinate attributes to data buffer.
         let tex_attrib_acc_indices: Vec<_> = attrib_transfer
-            .2
+            .tex_attribs_to_keep
             .iter()
             .filter_map(|attrib| {
                 let byte_length = attrib.attribute.data.direct_data().unwrap().byte_len();
@@ -516,7 +530,9 @@ pub fn export(
             .collect();
 
         // If colors or textures were specified but not materials, add a default material.
-        if (!attrib_transfer.1.is_empty() || !attrib_transfer.2.is_empty()) && materials.is_empty()
+        if (!attrib_transfer.color_attribs_to_keep.is_empty()
+            || !attrib_transfer.tex_attribs_to_keep.is_empty())
+            && materials.is_empty()
         {
             materials.push(MaterialInfo::default().into());
         }
@@ -554,7 +570,7 @@ pub fn export(
                 );
                 // Color attributes
                 for (id, (Attribute { .. }, &attrib_acc_index)) in attrib_transfer
-                    .1
+                    .color_attribs_to_keep
                     .iter()
                     .zip(color_attrib_acc_indices.iter())
                     .enumerate()
@@ -565,8 +581,10 @@ pub fn export(
                     );
                 }
                 // Texture coordinate attributes
-                for (TextureAttribute { id, .. }, &attrib_acc_index) in
-                    attrib_transfer.2.iter().zip(tex_attrib_acc_indices.iter())
+                for (TextureAttribute { id, .. }, &attrib_acc_index) in attrib_transfer
+                    .tex_attribs_to_keep
+                    .iter()
+                    .zip(tex_attrib_acc_indices.iter())
                 {
                     map.insert(
                         Valid(json::mesh::Semantic::TexCoords(*id)),
@@ -574,8 +592,10 @@ pub fn export(
                     );
                 }
                 // Custom attributes
-                for (Attribute { name, .. }, &attrib_acc_index) in
-                    attrib_transfer.0.iter().zip(attrib_acc_indices.iter())
+                for (Attribute { name, .. }, &attrib_acc_index) in attrib_transfer
+                    .attribs_to_keep
+                    .iter()
+                    .zip(attrib_acc_indices.iter())
                 {
                     use heck::ToShoutySnakeCase;
                     map.insert(
@@ -591,11 +611,11 @@ pub fn export(
             material: {
                 // Assign the material index only if there are materials there to prevent producing
                 // an invalid gltf.
-                let mtl_id = attrib_transfer.3.unwrap_or(0);
+                let mtl_id = attrib_transfer.material_id.unwrap_or(0);
                 if mtl_id < materials.len() as u32 {
                     Some(json::Index::new(mtl_id))
                 } else {
-                    if attrib_transfer.3.is_some() {
+                    if attrib_transfer.material_id.is_some() {
                         log!(msgs; "Material ID was found but no materials were specified.");
                     }
                     None
@@ -641,6 +661,11 @@ pub fn export(
         vec![]
     };
 
+    let output = Output::from_ext(output);
+
+    // Convert auto texture images to embedded or uri based on selected output.
+    process_auto_textures(&mut textures, &output);
+
     let TextureData {
         samplers,
         images,
@@ -652,8 +677,6 @@ pub fn export(
     // Print all accumulated warnings and messages.
     print_info(msgs);
     print_warnings(warnings);
-
-    let output = Output::from_ext(output);
 
     let buffer = json::Buffer {
         byte_length: data.len() as u32,

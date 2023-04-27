@@ -12,7 +12,11 @@ fn default_step() -> usize {
 fn default_mtl_id() -> String {
     "mtl_id".to_string()
 }
+fn default_textures() -> Vec<TextureInfo> {
+    vec![TextureInfo::default()]
+}
 
+/// Output configuration for the generated glTF.
 #[derive(Parser, Debug, Deserialize)]
 pub struct Config {
     /// Frames per second.
@@ -165,7 +169,12 @@ pub struct Config {
     ///
     /// '{"uv": f32, "bump": F32}'
     ///
-    #[clap(value_name = "TEXCOORDS", short = 'u', long, default_value = "{}")]
+    #[clap(
+        value_name = "TEXCOORDS",
+        short = 'u',
+        long,
+        default_value = "{\"uv\":f32}"
+    )]
     #[serde(default)]
     pub texcoords: TextureAttributeInfo,
 
@@ -181,20 +190,28 @@ pub struct Config {
     ///     [min_filter: MinFilter,]
     /// ) .."
     ///
-    /// where the fields in brackets '[]' represent optional fields.  'Image',
+    /// where the fields in brackets '[]' are optional.  'Image',
     /// 'WrappingMode', 'MagFilter' and 'MinFilter' are enums (variants) that
     /// take on the following values:
     ///
-    /// 'Image' is one of * Uri(path_to_image) * Embed(path_to_image)
+    /// 'Image' is one of{n}
+    ///     * Auto{n}
+    ///     * Uri(path_to_image){n}
+    ///     * Embed(path_to_image){n}
     ///
     /// where 'path_to_image' is the path to a 'png' or a 'jpeg' image which
     /// will be either referenced ('Uri') or embedded ('Embed') into the gltf
-    /// file itself.
+    /// file itself. If there is at least one image specified as 'Auto', then gltfgen
+    /// will try to automatically find as many referenced images as possible in
+    /// from the input. If the output is a .gltf file, then Auto images will be
+    /// referenced (like 'Uri'), and if the output is .glb, then they will be embedded
+    /// (like 'Embed'). If 'Auto' is used, it is recommended to keep it last in the list.
     ///
     /// The remaining optional fields describe the sampler and can take on the
     /// following values:
     ///
-    /// 'WrappingMode' is one of [ClampedToEdge, MirroredRepeat, Repeat (default)].
+    /// 'WrappingMode' is one of [ClampedToEdge, MirroredRepeat, Repeat
+    /// (default)].
     ///
     /// 'MagFilter' is one of [Nearest, Linear].
     ///
@@ -214,7 +231,7 @@ pub struct Config {
     /// Repeat wrap_t: mirrored_repeat)'
     ///
     #[clap(value_name = "TEXTURES", short = 'x', long)]
-    #[serde(default)]
+    #[serde(default = "default_textures")]
     pub textures: Vec<TextureInfo>,
 
     /// A tuple of material properties.
@@ -236,7 +253,14 @@ pub struct Config {
     /// 'base_texture' is not set by default.
     ///
     /// Default values are 0.0 for 'metallic', 0.5 for 'roughness', and [0.5, 0.5,
-    /// 0.5, 1.0] for 'base_color.
+    /// 0.5, 1.0] for 'base_color'.
+    ///
+    /// If a texture is specified with the -x or --textures flag in 'Auto' mode
+    /// (default), then gltfgen will create a default binding to each 'Auto'
+    /// image found. Note that the 'index' specified in 'base_texture' will be
+    /// in the order the 'Auto' images are found, which is unspecified.
+    /// This means that it is best to place the 'Auto' image reference at the
+    /// end of the list if used.
     ///
     /// EXAMPLES:
     ///

@@ -119,7 +119,7 @@ impl Default for WrappingMode {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Default, Deserialize)]
 pub struct TextureInfo {
     pub image: ImageInfo,
     #[serde(default)]
@@ -134,8 +134,16 @@ pub struct TextureInfo {
 
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub enum ImageInfo {
+    /// Determine how to output the image automatically.
+    Auto,
     Uri(String),
     Embed(String),
+}
+
+impl Default for ImageInfo {
+    fn default() -> Self {
+        ImageInfo::Auto
+    }
 }
 
 impl std::str::FromStr for TextureInfo {

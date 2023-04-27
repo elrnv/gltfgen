@@ -40,6 +40,7 @@ fn box_rotate_simple() -> Result<(), Error> {
     cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .arg("-r") // reverse polygon orientation
+        .arg("-u {}") // Suppress reading texture coordinates
         .assert()
         .stderr(predicate::str::contains(stderr))
         .success();
@@ -60,8 +61,8 @@ fn box_rotate_obj() -> Result<(), Error> {
         .arg("-r") // reverse polygon orientation
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
-        .arg("-u")
-        .arg("{\"uv\": f32}")
+        // .arg("-u")
+        // .arg("{\"uv\": f32}")
         .arg("-m")
         .arg("(name:\"checkerboard\", base_texture:(index:0,texcoord:0))")
         .assert()
@@ -207,6 +208,7 @@ fn multi() -> Result<(), Error> {
     cmd.arg(artifact)
         .arg("./assets/{*}_#.vtk")
         .arg("-r") // reverse polygon orientation
+        .arg("-u {}") // suppress loading texture coords
         .arg("-a")
         .arg("{\"pressure\": f32}")
         .assert()

@@ -34,12 +34,13 @@ impl From<meshx::attrib::Error> for AttribError {
 
 pub type VertexAttribute = meshx::attrib::Attribute<VertexIndex>;
 
-pub type AttribTransfer = (
-    Vec<Attribute>,
-    Vec<Attribute>,
-    Vec<TextureAttribute>,
-    /*material id*/ Option<u32>,
-);
+#[derive(Clone, Debug)]
+pub struct AttribTransfer {
+    pub attribs_to_keep: Vec<Attribute>,
+    pub color_attribs_to_keep: Vec<Attribute>,
+    pub tex_attribs_to_keep: Vec<TextureAttribute>,
+    pub material_id: Option<u32>,
+};
 
 /// Find a material ID in the given mesh by probing a given integer type `I`.
 fn find_material_id<I: Clone + num_traits::ToPrimitive + 'static>(
@@ -128,12 +129,12 @@ pub(crate) fn clean_attributes(
 
     // Instead of reinserting back into the mesh, we keep this outside the mesh so we can
     // determine the type of the attribute.
-    (
+    AttribTransfer {
         attribs_to_keep,
         color_attribs_to_keep,
         tex_attribs_to_keep,
         material_id,
-    )
+    }
 }
 
 /// Remove the given attribute from the mesh and return it along with its name.
