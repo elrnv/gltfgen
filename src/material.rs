@@ -7,7 +7,7 @@ use serde::Deserialize;
  */
 
 /// Specifies the texture to be used by the material.
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Default, Deserialize)]
 #[serde(untagged)]
 pub enum TextureRef {
     Some {
@@ -17,6 +17,7 @@ pub enum TextureRef {
         texcoord: u32,
     },
     /// Indicates that texture is not set.
+    #[default]
     None,
 }
 
@@ -32,12 +33,6 @@ impl From<TextureRef> for Option<(u32, u32)> {
             TextureRef::Some { index, texcoord } => Some((index, texcoord)),
             TextureRef::None => None,
         }
-    }
-}
-
-impl Default for TextureRef {
-    fn default() -> Self {
-        TextureRef::None
     }
 }
 
@@ -106,15 +101,14 @@ impl From<&meshx::io::obj::Material> for MaterialInfo {
                     .map(|tr| 1.0 - tr.into_inner())
                     .unwrap_or_else(|| default_base_color()[3])
             });
-        let material_info = MaterialInfo {
+        MaterialInfo {
             name: mtl.name.clone(),
             base_color: [kd[0], kd[1], kd[2], d],
             // TODO: See https://en.wikipedia.org/wiki/Wavefront_.obj_file#Physically-based_Rendering
             // metallic: mtl.Pm,
             // roughness: mtl.Pr,
             ..Default::default()
-        };
-        material_info
+        }
     }
 }
 

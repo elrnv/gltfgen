@@ -60,7 +60,7 @@ pub fn load_mesh(
     let mut tetmesh_tris = if let Ok(tetmesh) = meshx::io::load_tetmesh::<f64, _>(path) {
         trimesh_f64_to_f32(tetmesh.surface_trimesh())
     } else if let Ok(tetmesh) = meshx::io::load_tetmesh::<f32, _>(path) {
-        meshx::TriMesh::<f32>::from(tetmesh.surface_trimesh())
+        tetmesh.surface_trimesh()
     } else {
         meshx::TriMesh::default()
     };

@@ -8,7 +8,7 @@ use serde::Deserialize;
  */
 
 /// Magnification filter.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Default)]
 pub enum MagFilter {
     /// Corresponds to `GL_NEAREST`.
     #[serde(alias = "nearest")]
@@ -16,6 +16,7 @@ pub enum MagFilter {
     /// Corresponds to `GL_LINEAR`.
     #[serde(alias = "linear")]
     Linear,
+    #[default]
     None,
 }
 
@@ -29,14 +30,8 @@ impl From<MagFilter> for Option<Checked<json::texture::MagFilter>> {
     }
 }
 
-impl Default for MagFilter {
-    fn default() -> Self {
-        MagFilter::None
-    }
-}
-
 /// Minification filter.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Default)]
 pub enum MinFilter {
     /// Corresponds to `GL_NEAREST`.
     #[serde(alias = "nearest")]
@@ -56,6 +51,7 @@ pub enum MinFilter {
     /// Corresponds to `GL_LINEAR_MIPMAP_LINEAR`.
     #[serde(alias = "linear_mipmap_linear")]
     LinearMipmapLinear,
+    #[default]
     None,
 }
 
@@ -81,14 +77,8 @@ impl From<MinFilter> for Option<Checked<json::texture::MinFilter>> {
     }
 }
 
-impl Default for MinFilter {
-    fn default() -> Self {
-        MinFilter::None
-    }
-}
-
 /// Texture co-ordinate wrapping mode.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Default)]
 pub enum WrappingMode {
     /// Corresponds to `GL_CLAMP_TO_EDGE`.
     #[serde(alias = "clamp_to_edge")]
@@ -98,6 +88,7 @@ pub enum WrappingMode {
     MirroredRepeat,
     /// Corresponds to `GL_REPEAT`.
     #[serde(alias = "repeat")]
+    #[default]
     Repeat,
 }
 
@@ -110,12 +101,6 @@ impl From<WrappingMode> for Checked<json::texture::WrappingMode> {
             }
             WrappingMode::Repeat => Checked::Valid(json::texture::WrappingMode::Repeat),
         }
-    }
-}
-
-impl Default for WrappingMode {
-    fn default() -> Self {
-        WrappingMode::Repeat
     }
 }
 

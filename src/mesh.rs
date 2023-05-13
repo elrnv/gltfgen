@@ -60,7 +60,7 @@ impl Mesh {
             Mesh::TriMesh(ref trimesh) => (
                 trimesh.vertex_positions.as_slice(),
                 Some(build_indices(
-                    &**trimesh,
+                    trimesh,
                     attrib_transfer,
                     data,
                     buffer_views,

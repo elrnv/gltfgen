@@ -294,13 +294,13 @@ fn extract_local_materials_and_textures(
 ) {
     if let Some(MaterialIds::Local { map }) = &mut attrib_transfer.material_ids {
         let mut global_map = indexmap::IndexMap::new();
-        for (mtl, mut indices) in map.iter_mut() {
+        for (mtl, indices) in map.iter_mut() {
             let orig_indices = global_map
                 .entry(materials.len().to_u32().expect(
                     "Number of materials loaded does not fit into a 32 bit unsigned integer.",
                 ))
                 .or_insert_with(Vec::new);
-            orig_indices.append(&mut indices);
+            orig_indices.append(indices);
 
             let mut mtl_info = MaterialInfo::from(mtl);
 
