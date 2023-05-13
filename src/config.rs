@@ -12,9 +12,6 @@ fn default_step() -> usize {
 fn default_mtl_id() -> String {
     "mtl_id".to_string()
 }
-fn default_textures() -> Vec<TextureInfo> {
-    vec![TextureInfo::default()]
-}
 
 /// Output configuration for the generated glTF.
 #[derive(Parser, Debug, Deserialize)]
@@ -195,17 +192,14 @@ pub struct Config {
     /// take on the following values:
     ///
     /// 'Image' is one of{n}
-    ///     * Auto{n}
+    ///     * Auto(path_to_image){n}
     ///     * Uri(path_to_image){n}
     ///     * Embed(path_to_image){n}
     ///
     /// where 'path_to_image' is the path to a 'png' or a 'jpeg' image which
     /// will be either referenced ('Uri') or embedded ('Embed') into the gltf
-    /// file itself. If there is at least one image specified as 'Auto', then gltfgen
-    /// will try to automatically find as many referenced images as possible in
-    /// from the input. If the output is a .gltf file, then Auto images will be
-    /// referenced (like 'Uri'), and if the output is .glb, then they will be embedded
-    /// (like 'Embed'). If 'Auto' is used, it is recommended to keep it last in the list.
+    /// file itself. Images specified 'Auto' will be referenced for `.gltf`
+    /// outputs and embedded for `.glb` outputs.
     ///
     /// The remaining optional fields describe the sampler and can take on the
     /// following values:
@@ -231,7 +225,7 @@ pub struct Config {
     /// Repeat wrap_t: mirrored_repeat)'
     ///
     #[clap(value_name = "TEXTURES", short = 'x', long)]
-    #[serde(default = "default_textures")]
+    #[serde(default)]
     pub textures: Vec<TextureInfo>,
 
     /// A tuple of material properties.

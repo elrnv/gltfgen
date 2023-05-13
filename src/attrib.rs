@@ -5,6 +5,9 @@ use meshx::mesh::TriMesh;
 use meshx::topology::{FaceIndex, VertexIndex};
 use serde::Deserialize;
 
+type MaterialMap = IndexMap<meshx::io::obj::Material, Vec<usize>>;
+type MaterialIdMap = IndexMap<u32, Vec<usize>>;
+
 #[derive(Debug)]
 pub enum AttribError {
     InvalidTexCoordAttribType(ComponentType),
@@ -34,29 +37,54 @@ impl From<meshx::attrib::Error> for AttribError {
 
 pub type VertexAttribute = meshx::attrib::Attribute<VertexIndex>;
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum MaterialIds {
+    /// Local material IDs inferred if materials are explicitly specified in the input mesh.
+    Local {
+        /// A map of materials with an associated list of face indices which use this material.
+        map: MaterialMap,
+    },
+    /// Material IDs explicitly specified in the input mesh, which are interpreted as indexing some global material array.
+    Global { map: MaterialIdMap },
+}
+
 #[derive(Clone, Debug)]
 pub struct AttribTransfer {
     pub attribs_to_keep: Vec<Attribute>,
     pub color_attribs_to_keep: Vec<Attribute>,
     pub tex_attribs_to_keep: Vec<TextureAttribute>,
-    pub material_id: Option<u32>,
-};
+    pub material_ids: Option<MaterialIds>,
+}
 
-/// Find a material ID in the given mesh by probing a given integer type `I`.
-fn find_material_id<I: Clone + num_traits::ToPrimitive + 'static>(
+/// Find per face material IDs in the given mesh by probing a given integer type `I`.
+fn find_material_ids<I: Clone + num_traits::ToPrimitive + 'static>(
     mesh: &Mesh,
     attrib_name: &str,
-) -> Option<u32> {
+) -> Option<Vec<u32>> {
     use meshx::attrib::Attrib;
     match mesh {
         Mesh::TriMesh(mesh) => mesh
             .attrib_iter::<I, FaceIndex>(attrib_name)
             .ok()
-            .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0),
-        Mesh::PointCloud(ptcloud) => ptcloud
-            .attrib_iter::<I, VertexIndex>(attrib_name)
-            .ok()
-            .map(|iter| mode(iter.map(|x| x.to_u32().unwrap())).0),
+            .map(|iter| {
+                iter.map(|x| {
+                    x.to_u32()
+                        .expect("Material ID does not fit into an unsigned 32 bit integer.")
+                })
+                .collect()
+            }),
+        Mesh::PointCloud(ptcloud) => {
+            ptcloud
+                .attrib_iter::<I, VertexIndex>(attrib_name)
+                .ok()
+                .map(|iter| {
+                    iter.map(|x| {
+                        x.to_u32()
+                            .expect("Material ID does not fit into an unsigned 32 bit integer.")
+                    })
+                    .collect()
+                })
+        }
     }
 }
 
@@ -102,16 +130,36 @@ pub(crate) fn clean_attributes(
         .filter_map(|attrib| remove_attribute(mesh, attrib))
         .collect();
 
-    // Compute the material index for this mesh.
-    // Try a bunch of integer types
-    let material_id = find_material_id::<u32>(mesh, material_attribute)
-        .or_else(|| find_material_id::<i32>(mesh, material_attribute))
-        .or_else(|| find_material_id::<i64>(mesh, material_attribute))
-        .or_else(|| find_material_id::<u64>(mesh, material_attribute))
-        .or_else(|| find_material_id::<i16>(mesh, material_attribute))
-        .or_else(|| find_material_id::<u16>(mesh, material_attribute))
-        .or_else(|| find_material_id::<i8>(mesh, material_attribute))
-        .or_else(|| find_material_id::<u8>(mesh, material_attribute));
+    // Find material indices in this mesh.
+    // Try a bunch of different integer types or look for a material attribute found in wavefront-obj imports.
+    let material_ids = find_material_ids::<u32>(mesh, material_attribute)
+        .or_else(|| find_material_ids::<i32>(mesh, material_attribute))
+        .or_else(|| find_material_ids::<i64>(mesh, material_attribute))
+        .or_else(|| find_material_ids::<u64>(mesh, material_attribute))
+        .or_else(|| find_material_ids::<i16>(mesh, material_attribute))
+        .or_else(|| find_material_ids::<u16>(mesh, material_attribute))
+        .or_else(|| find_material_ids::<i8>(mesh, material_attribute))
+        .or_else(|| find_material_ids::<u8>(mesh, material_attribute))
+        .map_or_else(
+            || {
+                // Find the "mtl" attribute loaded by meshx for obj files.
+                //
+                // This allows gltfgen to automatically determine materials from
+                // .mtl files without having to specify materials in the
+                // configuration.
+                let map = extract_mtls(mesh);
+                if map.is_empty() {
+                    None
+                } else {
+                    Some(MaterialIds::Local { map })
+                }
+            },
+            |ids| {
+                Some(MaterialIds::Global {
+                    map: group_mtls(ids.as_slice()),
+                })
+            },
+        );
 
     // Remove all attributes from the mesh.
     // It is important to delete these attributes, because they could cause a huge memory overhead.
@@ -133,8 +181,39 @@ pub(crate) fn clean_attributes(
         attribs_to_keep,
         color_attribs_to_keep,
         tex_attribs_to_keep,
-        material_id,
+        material_ids,
     }
+}
+
+/// Find and extract the "mtl" attribute loaded by `meshx` for obj files. This allows `gltfgen` to automatically determine
+/// what textures to load.
+fn extract_mtls(mesh: &mut Mesh) -> MaterialMap {
+    use meshx::attrib::Attrib;
+    let mut mtls = IndexMap::new();
+    if let Ok(attrib) = match mesh {
+        Mesh::TriMesh(mesh) => mesh.remove_attrib::<FaceIndex>("mtl"),
+        Mesh::PointCloud(_) => return mtls, // Automatic materials not supported on pointclouds
+    } {
+        for (face_idx, mtl) in attrib
+            .indirect_iter::<meshx::io::obj::Material>()
+            .unwrap()
+            .enumerate()
+        {
+            let face_indices: &mut Vec<usize> = mtls.entry(mtl.clone()).or_insert_with(Vec::new);
+            face_indices.push(face_idx);
+        }
+    }
+    mtls
+}
+
+/// Group the given list of material ids into groups of indices corresponding to the same id.
+fn group_mtls(ids: &[u32]) -> MaterialIdMap {
+    let mut map = IndexMap::new();
+    for (face_idx, &mtl_id) in ids.iter().enumerate() {
+        let face_indices: &mut Vec<usize> = map.entry(mtl_id).or_insert_with(Vec::new);
+        face_indices.push(face_idx);
+    }
+    map
 }
 
 /// Remove the given attribute from the mesh and return it along with its name.
@@ -439,35 +518,4 @@ impl std::str::FromStr for TextureAttributeInfo {
             ron::de::from_str(input).map_err(Self::Err::from);
         idx_map.map(TextureAttributeInfo)
     }
-}
-
-/// Given a slice of integers, compute the mode and return it along with its
-/// frequency.
-/// If the slice is empty just return 0.
-fn mode<I: IntoIterator<Item = u32>>(data: I) -> (u32, usize) {
-    let data_iter = data.into_iter();
-    let mut bins = Vec::with_capacity(100);
-    for x in data_iter {
-        let i = x as usize;
-        if i >= bins.len() {
-            bins.resize(i + 1, 0usize);
-        }
-        bins[i] += 1;
-    }
-    bins.iter()
-        .cloned()
-        .enumerate()
-        .max_by_key(|&(_, f)| f)
-        .map(|(m, f)| (m as u32, f))
-        .unwrap_or((0u32, 0))
-}
-
-#[test]
-fn mode_test() {
-    let v = vec![1u32, 1, 1, 0, 0, 0, 0, 1, 2, 2, 1, 0, 1];
-    assert_eq!(mode(v), (1, 6));
-    let v = vec![];
-    assert_eq!(mode(v), (0, 0));
-    let v = vec![0u32, 0, 0, 1, 1, 1, 1, 2, 2, 2];
-    assert_eq!(mode(v), (1, 4));
 }

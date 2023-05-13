@@ -135,14 +135,14 @@ pub struct TextureInfo {
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub enum ImageInfo {
     /// Determine how to output the image automatically.
-    Auto,
+    Auto(String),
     Uri(String),
     Embed(String),
 }
 
 impl Default for ImageInfo {
     fn default() -> Self {
-        ImageInfo::Auto
+        ImageInfo::Auto(String::new())
     }
 }
 

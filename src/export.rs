@@ -9,14 +9,16 @@ use json::accessor::Type as GltfType;
 use json::validation::Checked::Valid; // For colouring log messages.
 
 use meshx::mesh::vertex_positions::VertexPositions;
-use meshx::mesh::PointCloud;
-use meshx::ops::*;
 
 mod animation;
 mod builders;
+mod primitives;
 
 use animation::*;
-use builders::*;
+pub(crate) use builders::*;
+use meshx::ops::BoundingBox;
+use num_traits::ToPrimitive;
+use primitives::*;
 
 use crate::attrib::*;
 use crate::material::*;
@@ -116,7 +118,7 @@ fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -
             } = *out.last_mut().unwrap();
             if mesh.eq_topo(&next_mesh)
                 && name == &next_name
-                && attrib_transfer.material_id == next_attrib_transfer.material_id
+                && attrib_transfer.material_ids == next_attrib_transfer.material_ids
             // same material
             {
                 // Same topology, convert positions to displacements.
@@ -151,13 +153,13 @@ struct TextureData {
 
 fn process_auto_textures(textures: &mut [TextureInfo], output: &Output) {
     // Process auto textures.
-    for tex in textures.iter_mut() {
-        if let &ImageInfo::Auto = &tex.image {
+    for TextureInfo { image, .. } in textures.iter_mut() {
+        if let ImageInfo::Auto(path) = image {
             match output {
-                Output::Binary { .. } => *tex.image = ImageInfo::Embed(),
-                Output::Standard { .. } => *tex.image = ImageInfo::Uri(),
+                Output::Binary { .. } => *image = ImageInfo::Embed(path.clone()),
+                Output::Standard { .. } => *image = ImageInfo::Uri(path.clone()),
             }
-        }
+        };
     }
 }
 
@@ -247,8 +249,7 @@ fn build_texture_data(
                             return None;
                         }
                     }
-                    // All Auto images should have been converted to either Embed or Uri, by this point.
-                    ImageInfo::Auto => unreachable!(),
+                    ImageInfo::Auto(path) => unreachable!("Unexpected Auto({path}) image. All images should be converted to either Embed or Uri."),
                 };
                 let image_index = images.len();
                 images.push(image);
@@ -283,13 +284,55 @@ fn build_texture_data(
     }
 }
 
+/// Loads local materials and textures from from attrib transfer into the global materials and textures arrays.
+///
+/// This function also promotes local materials in attrib_transfer to global, so only MaterialIds::Global variants need to be handled downstream.
+fn extract_local_materials_and_textures(
+    attrib_transfer: &mut AttribTransfer,
+    materials: &mut Vec<MaterialInfo>,
+    textures: &mut Vec<TextureInfo>,
+) {
+    if let Some(MaterialIds::Local { map }) = &mut attrib_transfer.material_ids {
+        let mut global_map = indexmap::IndexMap::new();
+        for (mtl, mut indices) in map.iter_mut() {
+            let orig_indices = global_map
+                .entry(materials.len().to_u32().expect(
+                    "Number of materials loaded does not fit into a 32 bit unsigned integer.",
+                ))
+                .or_insert_with(Vec::new);
+            orig_indices.append(&mut indices);
+
+            let mut mtl_info = MaterialInfo::from(mtl);
+
+            // If there is a texture specified and we can find a texture
+            // coordinate attribute, add to the TextureInfo vector.
+            if let Some(texture_path) = &mtl.map_kd {
+                // Use the first texture attrib if it exists
+                if !attrib_transfer.tex_attribs_to_keep.is_empty() {
+                    mtl_info.base_texture = TextureRef::Some {
+                        index: textures.len().to_u32().expect("Number of textures loaded does not fit into a 32 bit unsigned integer."), // New texture added below
+                        texcoord: 0,
+                    };
+                }
+                textures.push(TextureInfo {
+                    image: ImageInfo::Auto(texture_path.clone()),
+                    ..Default::default()
+                });
+            }
+            materials.push(mtl_info);
+        }
+        // Local materials promoted to global, save them as such.
+        attrib_transfer.material_ids = Some(MaterialIds::Global { map: global_map });
+    }
+}
+
 pub fn export(
     mut meshes: Vec<(String, usize, Mesh, AttribTransfer)>,
     output: PathBuf,
     time_step: f32,
     quiet: bool,
-    textures: Vec<TextureInfo>,
-    materials: Vec<MaterialInfo>,
+    mut textures: Vec<TextureInfo>,
+    mut materials: Vec<MaterialInfo>,
 ) {
     meshes.sort_by(|(name_a, frame_a, _, _), (name_b, frame_b, _, _)| {
         // First sort by name
@@ -298,7 +341,19 @@ pub fn export(
 
     // Convert sequence of meshes into meshes with morph targets by erasing repeating topology
     // data.
-    let morphed_meshes = into_nodes(meshes, quiet);
+    let mut morphed_meshes = into_nodes(meshes, quiet);
+
+    // Load local materials from loaded objs into our configuration array.
+    for Node {
+        ref mut attrib_transfer,
+        ..
+    } in morphed_meshes.iter_mut()
+    {
+        extract_local_materials_and_textures(attrib_transfer, &mut materials, &mut textures);
+    }
+
+    // Convert to const binding, guarantess no further modifications.
+    let morphed_meshes = morphed_meshes;
 
     let count: u64 = morphed_meshes.iter().map(|m| m.morphs.len() as u64).sum();
     let pb = new_progress_bar(quiet, count as usize);
@@ -330,38 +385,12 @@ pub fn export(
     {
         let bbox = mesh.bounding_box();
 
-        let (vertex_positions, indices) = match &mesh {
-            Mesh::TriMesh(trimesh) => {
-                // Push indices to data buffer.
-                let num_indices = trimesh.indices.len() * 3;
-                let byte_length = num_indices * mem::size_of::<u32>();
-                let indices_view = json::buffer::View::new(byte_length, data.len())
-                    .with_target(json::buffer::Target::ElementArrayBuffer);
-
-                let mut max_index = 0;
-                for idx in trimesh.indices.iter() {
-                    for &i in idx.iter() {
-                        max_index = max_index.max(i as u32);
-                        data.write_u32::<LE>(i as u32).unwrap();
-                    }
-                }
-
-                let idx_acc = json::Accessor::new(num_indices, GltfComponentType::U32)
-                    .with_buffer_view(buffer_views.len())
-                    .with_min_max(&[0][..], &[max_index][..]);
-
-                buffer_views.push(indices_view);
-                let idx_acc_index = accessors.len() as u32;
-                accessors.push(idx_acc);
-                (
-                    &trimesh.vertex_positions,
-                    Some(json::Index::new(idx_acc_index)),
-                )
-            }
-            Mesh::PointCloud(PointCloud {
-                vertex_positions, ..
-            }) => (vertex_positions, None),
-        };
+        let (vertex_positions, indices) = mesh.build_topology(
+            &attrib_transfer,
+            &mut data,
+            &mut buffer_views,
+            &mut accessors,
+        );
 
         // Push positions to data buffer.
         let byte_length = vertex_positions.len() * mem::size_of::<[f32; 3]>();
@@ -561,69 +590,18 @@ pub fn export(
             json::mesh::Mode::Points
         });
 
-        let primitives = vec![json::mesh::Primitive {
-            attributes: {
-                let mut map = std::collections::HashMap::new();
-                map.insert(
-                    Valid(json::mesh::Semantic::Positions),
-                    json::Index::new(pos_acc_index),
-                );
-                // Color attributes
-                for (id, (Attribute { .. }, &attrib_acc_index)) in attrib_transfer
-                    .color_attribs_to_keep
-                    .iter()
-                    .zip(color_attrib_acc_indices.iter())
-                    .enumerate()
-                {
-                    map.insert(
-                        Valid(json::mesh::Semantic::Colors(id as u32)),
-                        json::Index::new(attrib_acc_index),
-                    );
-                }
-                // Texture coordinate attributes
-                for (TextureAttribute { id, .. }, &attrib_acc_index) in attrib_transfer
-                    .tex_attribs_to_keep
-                    .iter()
-                    .zip(tex_attrib_acc_indices.iter())
-                {
-                    map.insert(
-                        Valid(json::mesh::Semantic::TexCoords(*id)),
-                        json::Index::new(attrib_acc_index),
-                    );
-                }
-                // Custom attributes
-                for (Attribute { name, .. }, &attrib_acc_index) in attrib_transfer
-                    .attribs_to_keep
-                    .iter()
-                    .zip(attrib_acc_indices.iter())
-                {
-                    use heck::ToShoutySnakeCase;
-                    map.insert(
-                        Valid(json::mesh::Semantic::Extras(name.to_shouty_snake_case())),
-                        json::Index::new(attrib_acc_index),
-                    );
-                }
-                map
-            },
-            extensions: Default::default(),
-            extras: Default::default(),
-            indices,
-            material: {
-                // Assign the material index only if there are materials there to prevent producing
-                // an invalid gltf.
-                let mtl_id = attrib_transfer.material_id.unwrap_or(0);
-                if mtl_id < materials.len() as u32 {
-                    Some(json::Index::new(mtl_id))
-                } else {
-                    if attrib_transfer.material_id.is_some() {
-                        log!(msgs; "Material ID was found but no materials were specified.");
-                    }
-                    None
-                }
-            },
+        let primitives = build_primitives(
             mode,
+            pos_acc_index,
+            &attrib_transfer,
+            &attrib_acc_indices,
+            &color_attrib_acc_indices,
+            &tex_attrib_acc_indices,
+            indices,
             targets,
-        }];
+            materials.len(),
+            &mut msgs,
+        );
 
         nodes.push(json::Node {
             camera: None,

@@ -6,10 +6,17 @@ use serde::Deserialize;
  * Parsing material info from command line
  */
 
+/// Specifies the texture to be used by the material.
 #[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
 #[serde(untagged)]
 pub enum TextureRef {
-    Some { index: u32, texcoord: u32 },
+    Some {
+        /// Specifies the 0-based index of the texture in a separate input vector storing `TextureInfo`s.
+        index: u32,
+        /// Specifies the index of the texture attribute specified in a separate input vector storing `TextureAttributeInfo`s.
+        texcoord: u32,
+    },
+    /// Indicates that texture is not set.
     None,
 }
 
@@ -76,6 +83,38 @@ impl std::str::FromStr for MaterialInfo {
     type Err = ron::de::Error;
     fn from_str(input: &str) -> Result<MaterialInfo, Self::Err> {
         ron::de::from_str::<MaterialInfo>(input).map_err(Self::Err::from)
+    }
+}
+
+/// Convenience converter using Material information from an obj material.
+///
+/// This conversion ignore textures.
+impl From<&meshx::io::obj::Material> for MaterialInfo {
+    fn from(mtl: &meshx::io::obj::Material) -> Self {
+        let kd = mtl
+            .kd
+            .map(|kd| [kd[0].into_inner(), kd[1].into_inner(), kd[2].into_inner()])
+            .unwrap_or_else(|| {
+                let c = default_base_color();
+                [c[0], c[1], c[2]]
+            });
+        let d = mtl
+            .d
+            .map(meshx::io::obj::NotNan::into_inner)
+            .unwrap_or_else(|| {
+                mtl.tr
+                    .map(|tr| 1.0 - tr.into_inner())
+                    .unwrap_or_else(|| default_base_color()[3])
+            });
+        let material_info = MaterialInfo {
+            name: mtl.name.clone(),
+            base_color: [kd[0], kd[1], kd[2], d],
+            // TODO: See https://en.wikipedia.org/wiki/Wavefront_.obj_file#Physically-based_Rendering
+            // metallic: mtl.Pm,
+            // roughness: mtl.Pr,
+            ..Default::default()
+        };
+        material_info
     }
 }
 

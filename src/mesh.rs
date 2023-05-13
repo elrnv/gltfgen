@@ -1,6 +1,9 @@
+use gltf::json;
 use meshx::mesh::vertex_positions::VertexPositions;
 use meshx::mesh::{PointCloud, PolyMesh, TetMesh, TriMesh};
 use meshx::topology::NumVertices;
+
+use crate::{AttribTransfer, MaterialIds};
 
 /// Supported output mesh types.
 #[derive(Debug)]
@@ -43,6 +46,30 @@ impl Mesh {
                     false
                 }
             }
+        }
+    }
+
+    pub fn build_topology(
+        &self,
+        attrib_transfer: &AttribTransfer,
+        data: &mut Vec<u8>,
+        buffer_views: &mut Vec<json::buffer::View>,
+        accessors: &mut Vec<json::Accessor>,
+    ) -> (&[[f32; 3]], Option<Vec<json::Index<json::Accessor>>>) {
+        match self {
+            Mesh::TriMesh(ref trimesh) => (
+                trimesh.vertex_positions.as_slice(),
+                Some(build_indices(
+                    &**trimesh,
+                    attrib_transfer,
+                    data,
+                    buffer_views,
+                    accessors,
+                )),
+            ),
+            Mesh::PointCloud(PointCloud {
+                vertex_positions, ..
+            }) => (vertex_positions.as_slice(), None),
         }
     }
 }
@@ -145,4 +172,87 @@ pub fn pointcloud_f64_to_f32(ptcloud: PointCloud<f64>) -> PointCloud<f32> {
         ),
         vertex_attributes,
     }
+}
+
+fn push_indices(
+    trimesh_indices: &[[usize; 3]],
+    face_indices: impl ExactSizeIterator<Item = usize>,
+    data: &mut Vec<u8>,
+    buffer_views: &mut Vec<json::buffer::View>,
+    accessors: &mut Vec<json::Accessor>,
+    indices: &mut Vec<json::Index<json::Accessor>>,
+) {
+    use crate::export::{AccessorBuilder, BufferViewBuilder};
+    use byteorder::{WriteBytesExt, LE};
+    use num_traits::ToPrimitive;
+
+    // Push indices to data buffer.
+    let num_indices = face_indices.len() * 3;
+    let byte_length = num_indices * std::mem::size_of::<u32>();
+    let indices_view = json::buffer::View::new(byte_length, data.len())
+        .with_target(json::buffer::Target::ElementArrayBuffer);
+
+    let mut max_index = 0;
+    let mut min_index = u32::MAX;
+    for idx in face_indices {
+        for &i in trimesh_indices[idx].iter() {
+            let vidx = i
+                .to_u32()
+                .expect("Vertex index does not fit into a 32 bit unsigned integer.");
+            max_index = max_index.max(vidx);
+            min_index = min_index.min(vidx);
+            data.write_u32::<LE>(vidx).unwrap();
+        }
+    }
+
+    let idx_acc = json::Accessor::new(num_indices, json::accessor::ComponentType::U32)
+        .with_buffer_view(buffer_views.len())
+        .with_min_max(&[min_index][..], &[max_index][..]);
+
+    buffer_views.push(indices_view);
+    let idx_acc_index = accessors.len() as u32;
+    accessors.push(idx_acc);
+    indices.push(json::Index::new(idx_acc_index));
+}
+
+fn build_indices(
+    trimesh: &TriMesh<f32>,
+    attrib_transfer: &AttribTransfer,
+    data: &mut Vec<u8>,
+    buffer_views: &mut Vec<json::buffer::View>,
+    accessors: &mut Vec<json::Accessor>,
+) -> Vec<json::Index<json::Accessor>> {
+    // Sort indices by associated materials (if any).
+    let mut indices = Vec::new();
+
+    match &attrib_transfer.material_ids {
+        Some(MaterialIds::Local { .. }) => {
+            unreachable!("All local material IDs should be converted to global at this point.");
+        }
+        Some(MaterialIds::Global { map }) => {
+            // Each face has a unique material id, split indices into sections corresponding to the same material id.
+            for face_indices in map.values() {
+                push_indices(
+                    trimesh.indices.as_slice(),
+                    face_indices.iter().cloned(),
+                    data,
+                    buffer_views,
+                    accessors,
+                    &mut indices,
+                );
+            }
+        }
+        None => {
+            // No materials to deal with, just push all the indices as they appear.
+            push_indices(
+                trimesh.indices.as_slice(),
+                0..trimesh.indices.len(),
+                data,
+                buffer_views,
+                accessors,
+                &mut indices,
+            );
+        }
+    }
+    indices
 }
