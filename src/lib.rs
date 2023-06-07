@@ -57,6 +57,8 @@ pub fn load_mesh(
         meshx::TriMesh::default()
     };
 
+    let polymesh_tris = mesh::remove_orphaned_vertices(polymesh_tris);
+
     let mut tetmesh_tris = if let Ok(tetmesh) = meshx::io::load_tetmesh::<f64, _>(path) {
         trimesh_f64_to_f32(tetmesh.surface_trimesh())
     } else if let Ok(tetmesh) = meshx::io::load_tetmesh::<f32, _>(path) {

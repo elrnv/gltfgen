@@ -1,6 +1,6 @@
 use gltf::json;
 use meshx::mesh::vertex_positions::VertexPositions;
-use meshx::mesh::{PointCloud, PolyMesh, TetMesh, TriMesh};
+use meshx::mesh::{PointCloud, PolyMesh, TetMesh, TriMesh, TriMeshExt};
 use meshx::topology::NumVertices;
 
 use crate::{AttribTransfer, MaterialIds};
@@ -130,6 +130,27 @@ impl From<PointCloud<f64>> for Mesh {
     fn from(mesh: PointCloud<f64>) -> Self {
         Mesh::PointCloud(pointcloud_f64_to_f32(mesh))
     }
+}
+
+// Utility function that removes all orphaned vertices (ones not referenced by a triangle).
+// This algorithm tries to keep the vertices in the same order.
+pub fn remove_orphaned_vertices(mesh: TriMesh<f32>) -> TriMesh<f32> {
+    use meshx::topology::*;
+
+    // Build vertex->face topology from the given mesh.
+    let mesh_ext = TriMeshExt::from(mesh.clone());
+    // Partition the mesh vertices into ones with triangle references (0) and ones without (1).
+    let mut vertex_partition = vec![0; mesh_ext.num_vertices()];
+
+    for (vidx, p) in vertex_partition.iter_mut().enumerate() {
+        if mesh_ext.num_faces_at_vertex(vidx) == 0 {
+            *p = 1;
+        }
+    }
+
+    let meshes = mesh.split_by_vertex_partition(&vertex_partition, 2).0;
+
+    meshes.into_iter().next().unwrap()
 }
 
 pub fn trimesh_f64_to_f32(mesh: TriMesh<f64>) -> TriMesh<f32> {
