@@ -22,7 +22,7 @@ pub(crate) fn build_primitives(
 ) -> Vec<json::mesh::Primitive> {
     // TODO: Split the mesh into multiple primitives, one for each material that appears on the mesh.
     let build_attributes = || {
-        let mut map = std::collections::HashMap::new();
+        let mut map = std::collections::BTreeMap::new();
         map.insert(
             Valid(json::mesh::Semantic::Positions),
             json::Index::new(pos_acc_index),
