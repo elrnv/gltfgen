@@ -44,6 +44,7 @@ pub(crate) trait AccessorBuilder {
     fn new(count: usize, generic_comp: GltfComponentType) -> Self;
     fn with_name(self, name: String) -> Self;
     fn with_buffer_view(self, buffer_view: usize) -> Self;
+    fn with_byte_offset(self, byte_offset: usize) -> Self;
     fn with_type(self, type_: GltfType) -> Self;
     fn with_component_type(self, component_type: json::accessor::GenericComponentType) -> Self;
     fn with_min_max<'a, T>(self, min: &'a [T], max: &'a [T]) -> Self
@@ -57,7 +58,7 @@ impl AccessorBuilder for json::Accessor {
     fn new(count: usize, generic_component_type: GltfComponentType) -> json::Accessor {
         json::Accessor {
             buffer_view: None,
-            byte_offset: 0,
+            byte_offset: None,
             count: count as u32,
             component_type: Valid(json::accessor::GenericComponentType(generic_component_type)),
             extensions: Default::default(),
@@ -75,7 +76,14 @@ impl AccessorBuilder for json::Accessor {
         self
     }
     fn with_buffer_view(mut self, buf_view: usize) -> json::Accessor {
+        if self.byte_offset.is_none() {
+            self.byte_offset = Some(0);
+        }
         self.buffer_view = Some(json::Index::new(buf_view as u32));
+        self
+    }
+    fn with_byte_offset(mut self, byte_offset: usize) -> json::Accessor {
+        self.byte_offset = Some(byte_offset as u32);
         self
     }
 
