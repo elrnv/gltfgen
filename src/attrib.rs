@@ -1,4 +1,5 @@
 use crate::mesh::Mesh;
+use crate::AttribConfig;
 use gltf::json;
 use indexmap::map::IndexMap;
 use meshx::mesh::TriMesh;
@@ -89,17 +90,15 @@ fn find_material_ids<I: Clone + num_traits::ToPrimitive + 'static>(
 }
 
 /// Cleanup unwanted attributes from a given `Mesh`.
-pub(crate) fn clean_attributes(
+pub fn clean_mesh(
     mesh: &mut Mesh,
-    attributes: &AttributeInfo,
-    color_attribs: &AttributeInfo,
-    tex_attributes: &TextureAttributeInfo,
-    material_attribute: &str,
+    config: AttribConfig<'_>,
     mut process_attrib_error: impl FnMut(AttribError),
 ) -> AttribTransfer {
     // First we remove all attributes we want to keep.
     let tex_attribs_to_keep: Vec<_> = if let Mesh::TriMesh(mesh) = mesh {
-        tex_attributes
+        config
+            .texcoords
             .0
             .iter()
             .enumerate()
@@ -119,12 +118,14 @@ pub(crate) fn clean_attributes(
 
     // It is important that these follow the tex attrib function since that can change mesh
     // topology.
-    let attribs_to_keep: Vec<_> = attributes
+    let attribs_to_keep: Vec<_> = config
+        .attributes
         .0
         .iter()
         .filter_map(|attrib| remove_attribute(mesh, attrib))
         .collect();
-    let color_attribs_to_keep: Vec<_> = color_attribs
+    let color_attribs_to_keep: Vec<_> = config
+        .colors
         .0
         .iter()
         .filter_map(|attrib| remove_attribute(mesh, attrib))
@@ -132,14 +133,14 @@ pub(crate) fn clean_attributes(
 
     // Find material indices in this mesh.
     // Try a bunch of different integer types or look for a material attribute found in wavefront-obj imports.
-    let material_ids = find_material_ids::<u32>(mesh, material_attribute)
-        .or_else(|| find_material_ids::<i32>(mesh, material_attribute))
-        .or_else(|| find_material_ids::<i64>(mesh, material_attribute))
-        .or_else(|| find_material_ids::<u64>(mesh, material_attribute))
-        .or_else(|| find_material_ids::<i16>(mesh, material_attribute))
-        .or_else(|| find_material_ids::<u16>(mesh, material_attribute))
-        .or_else(|| find_material_ids::<i8>(mesh, material_attribute))
-        .or_else(|| find_material_ids::<u8>(mesh, material_attribute))
+    let material_ids = find_material_ids::<u32>(mesh, config.material_attribute)
+        .or_else(|| find_material_ids::<i32>(mesh, config.material_attribute))
+        .or_else(|| find_material_ids::<i64>(mesh, config.material_attribute))
+        .or_else(|| find_material_ids::<u64>(mesh, config.material_attribute))
+        .or_else(|| find_material_ids::<i16>(mesh, config.material_attribute))
+        .or_else(|| find_material_ids::<u16>(mesh, config.material_attribute))
+        .or_else(|| find_material_ids::<i8>(mesh, config.material_attribute))
+        .or_else(|| find_material_ids::<u8>(mesh, config.material_attribute))
         .map_or_else(
             || {
                 // Find the "mtl" attribute loaded by meshx for obj files.
@@ -386,6 +387,13 @@ pub enum ComponentType {
     /// Single precision (32-bit) floating point number. Corresponds to `GL_FLOAT`.
     #[serde(alias = "f32")]
     F32,
+}
+
+impl std::str::FromStr for ComponentType {
+    type Err = ron::de::Error;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        ron::de::from_str(input).map_err(Self::Err::from)
+    }
 }
 
 impl From<ComponentType> for json::accessor::ComponentType {

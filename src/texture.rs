@@ -20,6 +20,13 @@ pub enum MagFilter {
     None,
 }
 
+impl std::str::FromStr for MagFilter {
+    type Err = ron::de::Error;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        ron::de::from_str(input).map_err(Self::Err::from)
+    }
+}
+
 impl From<MagFilter> for Option<Checked<json::texture::MagFilter>> {
     fn from(mf: MagFilter) -> Option<Checked<json::texture::MagFilter>> {
         match mf {
@@ -53,6 +60,13 @@ pub enum MinFilter {
     LinearMipmapLinear,
     #[default]
     None,
+}
+
+impl std::str::FromStr for MinFilter {
+    type Err = ron::de::Error;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        ron::de::from_str(input).map_err(Self::Err::from)
+    }
 }
 
 impl From<MinFilter> for Option<Checked<json::texture::MinFilter>> {
@@ -90,6 +104,13 @@ pub enum WrappingMode {
     #[serde(alias = "repeat")]
     #[default]
     Repeat,
+}
+
+impl std::str::FromStr for WrappingMode {
+    type Err = ron::de::Error;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        ron::de::from_str(input).map_err(Self::Err::from)
+    }
 }
 
 impl From<WrappingMode> for Checked<json::texture::WrappingMode> {

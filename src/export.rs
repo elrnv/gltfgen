@@ -21,10 +21,12 @@ use num_traits::ToPrimitive;
 use primitives::*;
 
 use crate::attrib::*;
+use crate::clean_named_meshes;
 use crate::material::*;
 use crate::mesh::Mesh;
 use crate::texture::*;
 use crate::utils::*;
+use crate::AttribConfig;
 
 #[derive(Clone)]
 enum Output {
@@ -82,29 +84,46 @@ fn to_padded_byte_vector<T>(vec: Vec<T>) -> Vec<u8> {
     new_vec
 }
 
-struct Node {
+pub struct Node {
     pub name: String,
-    pub first_frame: usize,
+    pub first_frame: u32,
     pub mesh: Mesh,
     pub attrib_transfer: AttribTransfer,
-    pub morphs: Vec<(usize, Vec<[f32; 3]>)>,
+    pub morphs: Vec<(i32, Vec<[f32; 3]>)>,
 }
 
 /// Split a sequence of keyframed trimeshes by changes in topology.
-fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -> Vec<Node> {
+fn into_nodes(
+    meshes: Vec<(String, u32, Mesh, AttribTransfer)>,
+    insert_vanishing_frames: bool,
+    quiet: bool,
+) -> Vec<Node> {
     let pb = new_progress_bar(quiet, meshes.len());
     pb.set_message("Extracting Animation");
+
+    // Create displacements with all vertices put at the origin
+    let vanishing_disp = |mesh: &Mesh| -> Vec<[f32; 3]> {
+        mesh.vertex_position_iter()
+            .map(|p| [-p[0], -p[1], -p[2]])
+            .collect()
+    };
 
     let mut out = Vec::new();
     let mut mesh_iter = meshes.into_iter();
 
     if let Some((name, first_frame, mesh, attrib_transfer)) = mesh_iter.next() {
+        let morphs = if insert_vanishing_frames {
+            vec![(first_frame as i32 - 1, vanishing_disp(&mesh))]
+        } else {
+            Vec::new()
+        };
+
         out.push(Node {
             name,
             first_frame,
             mesh,
             attrib_transfer,
-            morphs: Vec::new(),
+            morphs,
         });
 
         for (next_name, frame, next_mesh, next_attrib_transfer) in mesh_iter {
@@ -127,15 +146,24 @@ fn into_nodes(meshes: Vec<(String, usize, Mesh, AttribTransfer)>, quiet: bool) -
                     .zip(mesh.vertex_position_iter())
                     .map(|(a, b)| [a[0] - b[0], a[1] - b[1], a[2] - b[2]])
                     .collect();
-                morphs.push((frame, displacements));
+                morphs.push((frame as i32, displacements));
             } else {
+                let next_morphs = if insert_vanishing_frames {
+                    // First insert another vanishing frame at the end of the previous sequence.
+                    morphs.push((frame as i32, vanishing_disp(&mesh)));
+                    // Return initial morph target with all vertices put at the origin.
+                    vec![(frame as i32 - 1, vanishing_disp(&next_mesh))]
+                } else {
+                    Vec::new()
+                };
+
                 // Different topology, instantiate a new mesh.
                 out.push(Node {
                     name: next_name,
                     first_frame: frame,
                     mesh: next_mesh,
                     attrib_transfer: next_attrib_transfer,
-                    morphs: Vec::new(),
+                    morphs: next_morphs,
                 });
             }
         }
@@ -284,9 +312,11 @@ fn build_texture_data(
     }
 }
 
-/// Loads local materials and textures from from attrib transfer into the global materials and textures arrays.
+/// Loads local materials and textures from attrib transfer into the global
+/// materials and textures arrays.
 ///
-/// This function also promotes local materials in attrib_transfer to global, so only MaterialIds::Global variants need to be handled downstream.
+/// This function also promotes local materials in attrib_transfer to global, so
+/// only MaterialIds::Global variants need to be handled downstream.
 fn extract_local_materials_and_textures(
     attrib_transfer: &mut AttribTransfer,
     materials: &mut Vec<MaterialInfo>,
@@ -326,13 +356,42 @@ fn extract_local_materials_and_textures(
     }
 }
 
-pub fn export(
-    mut meshes: Vec<(String, usize, Mesh, AttribTransfer)>,
+/// Exports meshx meshes which have not yet been processed/cleaned.
+///
+/// This is a more convenient entry point for users of the `gltfgen` library (as
+/// opposed to command line tool), exporting sequences of meshes that have
+/// already been loaded externally.
+/// The frame numbers are inferred from the order in which the meshes are given.
+pub fn export_named_meshes(
+    meshes: Vec<(String, Mesh)>,
+    textures: Vec<TextureInfo>,
+    materials: Vec<MaterialInfo>,
+    attrib_config: AttribConfig,
     output: PathBuf,
     time_step: f32,
+    insert_vanishing_frames: bool,
     quiet: bool,
+) {
+    let meshes = clean_named_meshes(meshes, attrib_config);
+    export_clean_meshes(
+        meshes,
+        textures,
+        materials,
+        output,
+        time_step,
+        insert_vanishing_frames,
+        quiet,
+    );
+}
+
+pub fn export_clean_meshes(
+    mut meshes: Vec<(String, u32, Mesh, AttribTransfer)>,
     mut textures: Vec<TextureInfo>,
     mut materials: Vec<MaterialInfo>,
+    output: PathBuf,
+    time_step: f32,
+    insert_vanishing_frames: bool,
+    quiet: bool,
 ) {
     meshes.sort_by(|(name_a, frame_a, _, _), (name_b, frame_b, _, _)| {
         // First sort by name
@@ -341,7 +400,7 @@ pub fn export(
 
     // Convert sequence of meshes into meshes with morph targets by erasing repeating topology
     // data.
-    let mut morphed_meshes = into_nodes(meshes, quiet);
+    let mut morphed_meshes = into_nodes(meshes, insert_vanishing_frames, quiet);
 
     // Load local materials from loaded objs into our configuration array.
     for Node {
@@ -352,9 +411,43 @@ pub fn export(
         extract_local_materials_and_textures(attrib_transfer, &mut materials, &mut textures);
     }
 
-    // Convert to const binding, guarantess no further modifications.
-    let morphed_meshes = morphed_meshes;
+    export_nodes(
+        morphed_meshes,
+        textures,
+        materials,
+        output,
+        time_step,
+        quiet,
+    );
+}
 
+pub fn export_nodes(
+    morphed_meshes: Vec<Node>,
+    textures: Vec<TextureInfo>,
+    materials: Vec<MaterialInfo>,
+    output: PathBuf,
+    time_step: f32,
+    quiet: bool,
+) {
+    let (root, data, output) = build_gltf_parts(
+        morphed_meshes,
+        textures,
+        materials,
+        output,
+        time_step,
+        quiet,
+    );
+    write_file(root, data, output, quiet);
+}
+
+fn build_gltf_parts(
+    morphed_meshes: Vec<Node>,
+    mut textures: Vec<TextureInfo>,
+    materials: Vec<MaterialInfo>,
+    output: PathBuf,
+    time_step: f32,
+    quiet: bool,
+) -> (json::Root, Vec<u8>, Output) {
     let count: u64 = morphed_meshes.iter().map(|m| m.morphs.len() as u64).sum();
     let pb = new_progress_bar(quiet, count as usize);
     pb.set_message("Constructing glTF");
@@ -679,30 +772,37 @@ pub fn export(
 
     let num_nodes = nodes.len();
 
-    let root = json::Root {
-        asset: json::Asset {
-            generator: Some(format!("gltfgen v{}", clap::crate_version!())),
+    // Return the json structure and binary blob.
+    (
+        json::Root {
+            asset: json::Asset {
+                generator: Some(format!("gltfgen v{}", clap::crate_version!())),
+                ..Default::default()
+            },
+            animations,
+            accessors,
+            buffers: vec![buffer],
+            buffer_views,
+            meshes,
+            nodes,
+            scenes: vec![json::Scene {
+                extensions: Default::default(),
+                extras: Default::default(),
+                name: None,
+                nodes: (0..num_nodes).map(|i| json::Index::new(i as u32)).collect(),
+            }],
+            images,
+            samplers,
+            textures,
+            materials,
             ..Default::default()
         },
-        animations,
-        accessors,
-        buffers: vec![buffer],
-        buffer_views,
-        meshes,
-        nodes,
-        scenes: vec![json::Scene {
-            extensions: Default::default(),
-            extras: Default::default(),
-            name: None,
-            nodes: (0..num_nodes).map(|i| json::Index::new(i as u32)).collect(),
-        }],
-        images,
-        samplers,
-        textures,
-        materials,
-        ..Default::default()
-    };
+        data,
+        output,
+    )
+}
 
+fn write_file(root: json::Root, data: Vec<u8>, output: Output, quiet: bool) {
     let pb = new_progress_bar_file(quiet, 0);
     pb.set_message("Writing glTF to File");
 

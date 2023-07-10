@@ -10,8 +10,8 @@ use std::mem;
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_animation(
-    first_frame: usize,
-    morphs: &[(usize, Vec<[f32; 3]>)],
+    first_frame: u32,
+    morphs: &[(i32, Vec<[f32; 3]>)],
     node_index: usize,
     accessors: &mut Vec<json::Accessor>,
     buffer_views: &mut Vec<json::buffer::View>,

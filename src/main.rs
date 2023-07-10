@@ -182,10 +182,10 @@ fn try_main() -> Result<(), Error> {
                     .map(|frame_match| {
                         let frame = frame_match
                             .as_str()
-                            .parse::<usize>()
+                            .parse::<u32>()
                             .expect("ERROR: Failed to parse frame number");
                         lowest_frame_num =
-                            Some(lowest_frame_num.map_or(frame, |n: usize| n.min(frame)));
+                            Some(lowest_frame_num.map_or(frame, |n: u32| n.min(frame)));
                         frame
                     })
                     .unwrap_or(0);
@@ -233,16 +233,25 @@ fn try_main() -> Result<(), Error> {
         }
     }
 
+    let dt = if let Some(dt) = config.time_step {
+        dt
+    } else {
+        1.0 / config.fps as f32
+    };
+
     let pb = utils::new_progress_bar(opt.quiet, mesh_meta.len());
     pb.set_message("Building Meshes");
 
     let load_config = LoadConfig {
+        reverse: config.reverse,
+        invert_tets: config.invert_tets,
+    };
+
+    let attrib_config = AttribConfig {
         attributes: &config.attributes,
         colors: &config.colors,
         texcoords: &config.texcoords,
         material_attribute: &config.material_attribute,
-        reverse: config.reverse,
-        invert_tets: config.invert_tets,
     };
 
     let process_attrib_error = |e| {
@@ -254,30 +263,25 @@ fn try_main() -> Result<(), Error> {
         .into_par_iter()
         .progress_with(pb.clone())
         .filter_map(|(name, frame, path)| {
-            load_mesh(&path, load_config, process_attrib_error)
+            load_and_clean_mesh(&path, load_config, attrib_config, process_attrib_error)
                 .map(|(mesh, attrib_transfer)| (name, frame, mesh, attrib_transfer))
         })
         .collect();
 
     pb.finish_with_message("Done building meshes");
 
-    let dt = if let Some(dt) = config.time_step {
-        dt
-    } else {
-        1.0 / config.fps as f32
-    };
-
     if meshes.is_empty() {
         return Err(Error::NoMeshesFound);
     }
 
-    export::export(
+    export::export_clean_meshes(
         meshes,
-        opt.output,
-        dt,
-        opt.quiet,
         config.textures,
         config.materials,
+        opt.output,
+        dt,
+        config.insert_vanishing_frames,
+        opt.quiet,
     );
 
     Ok(())

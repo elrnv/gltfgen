@@ -3,10 +3,10 @@ use serde::Deserialize;
 
 use crate::{AttributeInfo, MaterialInfo, TextureAttributeInfo, TextureInfo};
 
-fn default_fps() -> usize {
+fn default_fps() -> u32 {
     24
 }
-fn default_step() -> usize {
+fn default_step() -> u32 {
     1
 }
 fn default_mtl_id() -> String {
@@ -22,7 +22,7 @@ pub struct Config {
     /// parameter is ignored.
     #[clap(value_name = "FPS", short, long, default_value = "24")]
     #[serde(default = "default_fps")]
-    pub fps: usize,
+    pub fps: u32,
 
     /// Time step in seconds between discrete frames.
     ///
@@ -52,7 +52,7 @@ pub struct Config {
     ///
     #[clap(value_name = "STEPS", short, long, default_value = "1")]
     #[serde(default = "default_step")]
-    pub step: usize,
+    pub step: u32,
 
     /// A dictionary of color attributes and their types.
     ///
@@ -283,4 +283,21 @@ pub struct Config {
     #[clap(value_name = "MTL-ATTRIB", short = 'e', long, default_value = "mtl_id")]
     #[serde(default = "default_mtl_id")]
     pub material_attribute: String,
+
+    /// Inserts additional frames before and after an animation sequence with
+    /// all vertex positions at the origin.
+    ///
+    /// This effectively hides meshes _before_ and _after_ each animation
+    /// sequence, giving the illusion of continuous animation to sequences with
+    /// varying topology.  This depends heavily on glTF viewers implementing
+    /// framed animation correctly (e.g. this will work in Blender but not in
+    /// most web viewers).
+    ///
+    /// CAVEATS:
+    /// When viewing the animation at a higher frame rate than what was
+    /// originally specified (to gltfgen) the meshes will blend in and out of the origin between frames
+    /// which have different topologies, which breaks the illusion.
+    #[clap(long)]
+    #[serde(default)]
+    pub insert_vanishing_frames: bool,
 }
