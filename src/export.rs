@@ -89,7 +89,7 @@ pub struct Node {
     pub first_frame: u32,
     pub mesh: Mesh,
     pub attrib_transfer: AttribTransfer,
-    pub morphs: Vec<(i32, Vec<[f32; 3]>)>,
+    pub morphs: Vec<(u32, Vec<[f32; 3]>)>,
 }
 
 /// Split a sequence of keyframed trimeshes by changes in topology.
@@ -112,8 +112,8 @@ fn into_nodes(
     let mut mesh_iter = meshes.into_iter();
 
     if let Some((name, first_frame, mesh, attrib_transfer)) = mesh_iter.next() {
-        let morphs = if insert_vanishing_frames {
-            vec![(first_frame as i32 - 1, vanishing_disp(&mesh))]
+        let morphs = if insert_vanishing_frames && first_frame > 0 {
+            vec![(first_frame - 1, vanishing_disp(&mesh))]
         } else {
             Vec::new()
         };
@@ -146,13 +146,13 @@ fn into_nodes(
                     .zip(mesh.vertex_position_iter())
                     .map(|(a, b)| [a[0] - b[0], a[1] - b[1], a[2] - b[2]])
                     .collect();
-                morphs.push((frame as i32, displacements));
+                morphs.push((frame, displacements));
             } else {
                 let next_morphs = if insert_vanishing_frames {
                     // First insert another vanishing frame at the end of the previous sequence.
-                    morphs.push((frame as i32, vanishing_disp(&mesh)));
+                    morphs.push((frame, vanishing_disp(&mesh)));
                     // Return initial morph target with all vertices put at the origin.
-                    vec![(frame as i32 - 1, vanishing_disp(&next_mesh))]
+                    vec![(frame - 1, vanishing_disp(&next_mesh))]
                 } else {
                     Vec::new()
                 };
@@ -417,6 +417,7 @@ pub fn export_clean_meshes(
         materials,
         output,
         time_step,
+        insert_vanishing_frames,
         quiet,
     );
 }
@@ -427,6 +428,7 @@ pub fn export_nodes(
     materials: Vec<MaterialInfo>,
     output: PathBuf,
     time_step: f32,
+    insert_vanishing_frames: bool,
     quiet: bool,
 ) {
     let (root, data, output) = build_gltf_parts(
@@ -435,6 +437,7 @@ pub fn export_nodes(
         materials,
         output,
         time_step,
+        insert_vanishing_frames,
         quiet,
     );
     write_file(root, data, output, quiet);
@@ -446,6 +449,7 @@ fn build_gltf_parts(
     materials: Vec<MaterialInfo>,
     output: PathBuf,
     time_step: f32,
+    insert_vanishing_frames: bool,
     quiet: bool,
 ) -> (json::Root, Vec<u8>, Output) {
     let count: u64 = morphed_meshes.iter().map(|m| m.morphs.len() as u64).sum();
@@ -667,6 +671,7 @@ fn build_gltf_parts(
             &mut buffer_views,
             &mut data,
             time_step,
+            insert_vanishing_frames && first_frame != 0,
             &pb,
         )
         .map(|(mut channel, sampler, targets)| {

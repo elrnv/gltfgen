@@ -11,12 +11,13 @@ use std::mem;
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_animation(
     first_frame: u32,
-    morphs: &[(i32, Vec<[f32; 3]>)],
+    morphs: &[(u32, Vec<[f32; 3]>)],
     node_index: usize,
     accessors: &mut Vec<json::Accessor>,
     buffer_views: &mut Vec<json::buffer::View>,
     data: &mut Vec<u8>,
     time_step: f32,
+    insert_vanishing_frames: bool,
     pb: &ProgressBar,
 ) -> Option<(
     json::animation::Channel,
@@ -36,8 +37,15 @@ pub(crate) fn build_animation(
     let byte_length = morphs.len() * mem::size_of::<u32>();
     let weight_indices_view = json::buffer::View::new(byte_length, data.len());
 
+    let mut first_morph = 0;
+    if insert_vanishing_frames {
+        // First frame is vanishing, second is the actual first frame of the animation.
+        // We need to order the weights so the frames are in order.
+        data.write_u32::<LE>(0u32).unwrap();
+        first_morph = 1;
+    }
     // Note: first frame is all zeros
-    for i in 0..morphs.len() {
+    for i in first_morph..morphs.len() {
         // all frames but first have a non-zero weight
         let index = morphs.len() * (i + 1) + i;
         data.write_u32::<LE>(index as u32).unwrap();
@@ -70,12 +78,20 @@ pub(crate) fn build_animation(
 
     let mut min_time = first_frame as f32 * time_step;
     let mut max_time = first_frame as f32 * time_step;
+    if insert_vanishing_frames {
+        data.write_f32::<LE>(morphs[0].0 as f32 * time_step)
+            .unwrap();
+    }
     data.write_f32::<LE>(first_frame as f32 * time_step)
         .unwrap();
     for (frame, _) in morphs.iter() {
         let time = *frame as f32 * time_step;
         min_time = min_time.min(time);
         max_time = max_time.max(time);
+        if insert_vanishing_frames && frame == &morphs[0].0 {
+            // Skip the first vanishing frame frame, since it was already inserted above.
+            continue;
+        }
         data.write_f32::<LE>(time).unwrap();
     }
     let time_view_index = buffer_views.len();
