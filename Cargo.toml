@@ -13,9 +13,7 @@ license = "MPL-2.0"
 keywords = ["vtk", "obj", "3D", "animation", "generator"]
 
 [dependencies]
-# gltf = { version = "1", features = ["names", "extras"] }
-# Revert back to gltf after https://github.com/gltf-rs/gltf/pull/381 is merged
-gltf = { git = "https://github.com/elrnv/gltf.git", branch = "main", version = "1", features = ["names", "extras"] } 
+gltf = { version = "1", features = ["names", "extras"] }
 clap = { version = "4", features = ["derive", "wrap_help", "cargo"] }
 regex = "1"
 glob = "0.3"
