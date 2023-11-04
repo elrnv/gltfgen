@@ -1,6 +1,6 @@
 [package]
 name = "gltfgen"
-version = "0.7.0"
+version = "0.7.1"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 edition = "2021"
 
@@ -22,11 +22,11 @@ byteorder = "1"
 indicatif = { version = "0.17", features = ["rayon"] }
 console = "0.15"
 rayon = "1"
-syn = "1" # For parsing attributes
+syn = "2" # For parsing attributes
 heck = "0.4" # For converting case
 ron = "0.8"
 serde = "1"
-indexmap = { version = "1", features = ["serde-1"] }
+indexmap = { version = "2", features = ["serde"] }
 num-traits = "0.2"
 thiserror = "1.0.23"
 log = "0.4"
