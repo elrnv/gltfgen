@@ -61,13 +61,6 @@ impl Output {
     }
 }
 
-#[derive(Copy, Clone)]
-#[repr(C)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 3],
-}
-
 fn align_to_multiple_of_four(n: u32) -> u32 {
     (n + 3) & !3
 }
@@ -84,12 +77,30 @@ fn to_padded_byte_vector<T>(vec: Vec<T>) -> Vec<u8> {
     new_vec
 }
 
+// A single morph target.
+pub struct Morph {
+    pub frame: u32,
+    pub position_disp: Vec<[f32; 3]>,
+    pub normal_disp: Vec<[f32; 3]>,
+    pub tangent_disp: Vec<[f32; 3]>,
+    // Texcoord displacements
+    //
+    // These can be given as Vec3 of floats or unsigned bytes or short integers.
+    pub texcoord_disp: Attribute,
+    // Color deltas
+    //
+    // These can be given as Vec3 or Vec4 of floats or unsigned bytes or short
+    // integers.
+    pub color_disp: Attribute,
+}
+
+// One node representing a mesh with a set of morph targets.
 pub struct Node {
     pub name: String,
     pub first_frame: u32,
     pub mesh: Mesh,
     pub attrib_transfer: AttribTransfer,
-    pub morphs: Vec<(u32, Vec<[f32; 3]>)>,
+    pub morphs: Vec<Morph>,
 }
 
 /// Split a sequence of keyframed trimeshes by changes in topology.
@@ -113,7 +124,12 @@ fn into_nodes(
 
     if let Some((name, first_frame, mesh, attrib_transfer)) = mesh_iter.next() {
         let morphs = if insert_vanishing_frames && first_frame > 0 {
-            vec![(first_frame - 1, vanishing_disp(&mesh))]
+            vec![Morph {
+                frame: first_frame - 1,
+                position_disp: vanishing_disp(&mesh),
+                //tODO: implement animated normals and other attributes.
+                normal_disp: ,
+            }]
         } else {
             Vec::new()
         };
