@@ -89,16 +89,22 @@ pub struct Config {
     #[serde(default)]
     pub colors: AttributeInfo,
 
-    /// A dictionary of custom vertex attributes and their types.
+    /// A dictionary of vertex attributes and their types.
     ///
     /// The dictionary string should have the following pattern:
     ///
     /// '{"attribute1":type1(component1), "attribute2":type2(component2), ..}'
+    /// 
+    /// Use this to specify custom attributes as well as special attributes like
+    /// normals and tangents, which are expected to be named "N" and "T"
+    /// respectively. If an input file does not have a specific way to specify
+    /// these attributes, make sure that they are appropriately named on the
+    /// input and have single precision floating point component type (f32).
     ///
-    /// The attribute names should appear exactly how the attribute is named in
-    /// the input mesh files.  On the output, the attribute names will be
-    /// converted to SCREAMING_SNAKE case prefixed with an underscore as
-    /// required by the glTF 2.0 specifications.
+    /// For custom attributes, the attribute names should appear exactly how the
+    /// attribute is named in the input mesh files.  On the output, the
+    /// attribute names will be converted to SCREAMING_SNAKE case prefixed with
+    /// an underscore as required by the glTF 2.0 specifications.
     ///
     /// For example an attribute named "temperatureKelvin" will be stored as
     /// "_TEMPERATURE_KELVIN" in the output. There are no guarantees for
@@ -115,6 +121,10 @@ pub struct Config {
     /// Scalar types may be specified without the 'Scalar(..)', but with the
     /// component type directly as 'attribute: F32' instead of 'attribute:
     /// Scalar(F32)'.
+    /// 
+    /// If this flag is omitted, then gltfgen looks for normal vertex attributes
+    /// named "N" by default. This will pick up dedicated normal attributes in
+    /// formats like 'vn' in '.obj' files and NORMALS in '.vtk' files.
     ///
     /// Note that type and component names may be specified in all lower case as
     /// well.
@@ -134,7 +144,7 @@ pub struct Config {
     ///
     /// '{"temperature":F32, "force":Vec3(F32), "material":Scalar(u32)}'
     ///
-    #[clap(value_name = "ATTRIBS", short, long, default_value = "{}")]
+    #[clap(value_name = "ATTRIBS", short, long, default_value = "{\"N\":Vec3(f32)}")]
     #[serde(default)]
     pub attributes: AttributeInfo,
 
@@ -153,6 +163,11 @@ pub struct Config {
     ///
     /// which correspond to 'GL_UNSIGNED_BYTE', 'GL_UNSIGNED_SHORT', and
     /// 'GL_FLOAT' respectively.
+    /// 
+    /// If this flag is omitted, then gltfgen looks for texture attributes
+    /// named "uv" by default. This will pick up dedicated texture attributes in
+    /// formats like 'vt' in '.obj' files and TEXTURE_COORDINATES in '.vtk' files.
+    ///
     ///
     /// Note that component type names may be specified in lower case as well.
     ///

@@ -20,7 +20,7 @@ fn box_triangulated() -> Result<(), Error> {
         .arg("./assets/{box_triangulated}.vtk")
         .arg("-r") // reverse polygon orientation
         .arg("-a")
-        .arg("{\"pressure\": f32}")
+        .arg("{\"pressure\": f32}") // Suppress reading normals
         .assert()
         .stderr(predicate::str::contains(stderr))
         .success();
@@ -40,7 +40,10 @@ fn box_rotate_simple() -> Result<(), Error> {
     cmd.arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .arg("-r") // reverse polygon orientation
-        .arg("-u {}") // Suppress reading texture coordinates
+        .arg("-u")
+        .arg("{}") // Suppress reading texture coordinates
+        .arg("-a")
+        .arg("{}") // Suppress reading normals
         .assert()
         .stderr(predicate::str::contains(stderr))
         .success();
@@ -87,8 +90,8 @@ fn box_rotate() -> Result<(), Error> {
         .arg("-r") // reverse polygon orientation
         .arg("-x")
         .arg("(image: Embed(\"./assets/checker16.png\"))")
-        .arg("-u")
-        .arg("{\"uv\": f32}")
+        // .arg("-u")
+        // .arg("{\"uv\": f32}")
         .arg("-m")
         .arg("(name:\"checkerboard\", base_texture:(index:0,texcoord:0))")
         .assert()
@@ -114,7 +117,7 @@ fn box_rotate_attribs() -> Result<(), Error> {
         .arg("-u")
         .arg("{\"uv\": f32}")
         .arg("-a")
-        .arg("{\"pressure\": f32}")
+        .arg("{\"N\": Vec3(f32), \"pressure\": f32}")
         .arg("-c")
         .arg("{\"Cd\": vec3(f32)}")
         .arg("-m")
@@ -142,7 +145,7 @@ fn box_rotate_attribs_gltf() -> Result<(), Error> {
         .arg("-u")
         .arg("{\"uv\": f32}")
         .arg("-a")
-        .arg("{\"pressure\": f32}")
+        .arg("{\"N\": Vec3(f32), \"pressure\": f32}")
         .arg("-c")
         .arg("{\"Cd\": vec3(f32)}")
         .arg("-m")
@@ -208,9 +211,10 @@ fn multi() -> Result<(), Error> {
     cmd.arg(artifact)
         .arg("./assets/{*}_#.vtk")
         .arg("-r") // reverse polygon orientation
-        .arg("-u {}") // suppress loading texture coords
+        .arg("-u")
+        .arg("{}") // suppress loading texture coords
         .arg("-a")
-        .arg("{\"pressure\": f32}")
+        .arg("{\"pressure\": f32}") // Ignore normals
         .assert()
         .stderr(predicate::str::contains(warning1).and(predicate::str::contains(warning2)))
         .success();

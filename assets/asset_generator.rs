@@ -13,13 +13,13 @@
 
 use meshx::attrib::*;
 use meshx::{
-    builder::PlatonicSolidBuilder, io, mesh::TriMesh, ops::*, topology::*, VertexPositions,
-    io::vtk,
+    builder::{BoxBuilder, PlatonicSolidBuilder}, io, mesh::TriMesh, ops::*, topology::*, VertexPositions,
 };
 
 fn generate_box_triangulated_asset() {
-    let mesh = PlatonicSolidBuilder::build_cube::<f32>();
+    let mesh = BoxBuilder::new().build_polymesh::<f32>();
     let mut mesh = TriMesh::from(mesh);
+    mesh.uniform_scale(0.5);
 
     // Face integer attribute.
     let f_ids = vec![0_i32; mesh.num_faces()];
@@ -72,7 +72,8 @@ fn generate_box_rotate_assets() {
     // Generate box_rotate examples.
     let n_frames = 12;
     for i in 0..n_frames {
-        let mut mesh = PlatonicSolidBuilder::build_cube::<f32>();
+        let mut mesh = BoxBuilder::new().build_polymesh::<f32>();
+        mesh.uniform_scale(0.5);
         let ratio = i as f32 / (n_frames - 1) as f32;
 
         // Face integer attribute.
@@ -172,6 +173,12 @@ fn generate_box_rotate_assets() {
             uv[0] += 0.25;
         });
 
+        // Normals
+        let normals = mesh.vertex_positions().iter().map(|[x,y,z]| {
+            let l = 1.0/(x*x + y*y + z*z).sqrt();
+            [x*l, y*l, z*l]
+        }).collect::<Vec<_>>();
+
         // Transform mesh.
         mesh.scale([1.0 + ratio, 1.0, 1.0]);
         mesh.rotate_by_vector([0.0, ratio * std::f32::consts::PI, 0.0]);
@@ -186,6 +193,8 @@ fn generate_box_rotate_assets() {
             .unwrap();
         mesh.insert_attrib_data::<_, FaceVertexIndex>("uv", uv)
             .unwrap();
+        mesh.insert_attrib_data::<_, VertexIndex>("N", normals)
+            .unwrap();
 
         io::save_polymesh(&mesh, &format!("./box_rotate_{}.vtk", i + 1)).unwrap();
         io::save_polymesh(&mesh, &format!("./box_rotate_{}.obj", i + 1)).unwrap();
@@ -195,7 +204,7 @@ fn generate_box_rotate_assets() {
 fn generate_tet_assets() {
     let n_frames = 2;
     for i in 0..n_frames {
-        let mut mesh = PlatonicSolidBuilder::build_tetrahedron::<f32>();
+        let mut mesh = PlatonicSolidBuilder::default().build_tetrahedron::<f32>();
 
         // Cell integer attribute.
         let f_ids = vec![0_i32; mesh.num_cells()];

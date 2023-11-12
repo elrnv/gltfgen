@@ -50,17 +50,31 @@ pub(crate) fn build_primitives(
                 json::Index::new(attrib_acc_index),
             );
         }
-        // Custom attributes
-        for (Attribute { name, .. }, &attrib_acc_index) in attrib_transfer
+        // Custom attributes, normals and tangents
+        for (Attribute { name, type_, .. }, &attrib_acc_index) in attrib_transfer
             .attribs_to_keep
             .iter()
             .zip(attrib_acc_indices.iter())
         {
             use heck::ToShoutySnakeCase;
-            map.insert(
-                Valid(json::mesh::Semantic::Extras(name.to_shouty_snake_case())),
-                json::Index::new(attrib_acc_index),
-            );
+            use crate::{Type, ComponentType};
+
+            if name == "N" && type_ == &Type::Vec3(ComponentType::F32) {
+                map.insert(
+                    Valid(json::mesh::Semantic::Normals),
+                    json::Index::new(attrib_acc_index),
+                );
+            } else if name == "T" && type_ == &Type::Vec3(ComponentType::F32) {
+                map.insert(
+                    Valid(json::mesh::Semantic::Tangents),
+                    json::Index::new(attrib_acc_index),
+                );
+            } else {
+                map.insert(
+                    Valid(json::mesh::Semantic::Extras(name.to_shouty_snake_case())),
+                    json::Index::new(attrib_acc_index),
+                );
+            }
         }
         map
     };
