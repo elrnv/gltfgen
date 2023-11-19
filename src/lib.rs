@@ -245,14 +245,16 @@ mod tests {
 
         export::export_clean_meshes(
             meshes,
-            Vec::new(),
-            Vec::new(),
-            artifact.into(),
-            dt,
-            false,
-            false,
-            false,
-            true,
+            export::ExportConfig {
+                textures: Vec::new(),
+                materials: Vec::new(),
+                output: artifact.into(),
+                time_step: dt,
+                insert_vanishing_frames: false,
+                animate_normals: false,
+                animate_tangents: false,
+                quiet: true,
+            }
         );
 
         let actual = Gltf::open(artifact).unwrap().blob;
@@ -290,15 +292,17 @@ mod tests {
         // The loaded meshes are then processed according to the given AttribConfig.
         export::export_named_meshes(
             meshes,
-            Vec::new(),
-            Vec::new(),
             attrib_config,
-            artifact.into(),
-            dt,
-            false,
-            false,
-            false,
-            true,
+            export::ExportConfig {
+                textures: Vec::new(),
+                materials: Vec::new(),
+                output: artifact.into(),
+                time_step: dt,
+                insert_vanishing_frames: false,
+                animate_normals: false,
+                animate_tangents: false,
+                quiet: true,
+            }
         );
 
         let actual = Gltf::open(artifact).unwrap().blob;

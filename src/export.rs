@@ -404,6 +404,21 @@ fn extract_local_materials_and_textures(
     }
 }
 
+/// Config struct for exporting gltf files.
+///
+/// This is a subset of the options available in the main Config.
+#[derive(Clone, Debug)]
+pub struct ExportConfig {
+    pub textures: Vec<TextureInfo>,
+    pub materials: Vec<MaterialInfo>,
+    pub output: PathBuf,
+    pub time_step: f32,
+    pub insert_vanishing_frames: bool,
+    pub animate_normals: bool,
+    pub animate_tangents: bool,
+    pub quiet: bool,
+}
+
 /// Exports meshx meshes which have not yet been processed/cleaned.
 ///
 /// This is a more convenient entry point for users of the `gltfgen` library (as
@@ -412,40 +427,28 @@ fn extract_local_materials_and_textures(
 /// The frame numbers are inferred from the order in which the meshes are given.
 pub fn export_named_meshes(
     meshes: Vec<(String, Mesh)>,
-    textures: Vec<TextureInfo>,
-    materials: Vec<MaterialInfo>,
     attrib_config: AttribConfig,
-    output: PathBuf,
-    time_step: f32,
-    insert_vanishing_frames: bool,
-    animate_normals: bool,
-    animate_tangents: bool,
-    quiet: bool,
+    export_config: ExportConfig,
 ) {
     let meshes = clean_named_meshes(meshes, attrib_config);
     export_clean_meshes(
         meshes,
-        textures,
-        materials,
+        export_config
+    );
+}
+
+pub fn export_clean_meshes(
+    mut meshes: Vec<(String, u32, Mesh, AttribTransfer)>,
+    ExportConfig {
+        mut textures,
+        mut materials,
         output,
         time_step,
         insert_vanishing_frames,
         animate_normals,
         animate_tangents,
         quiet,
-    );
-}
-
-pub fn export_clean_meshes(
-    mut meshes: Vec<(String, u32, Mesh, AttribTransfer)>,
-    mut textures: Vec<TextureInfo>,
-    mut materials: Vec<MaterialInfo>,
-    output: PathBuf,
-    time_step: f32,
-    insert_vanishing_frames: bool,
-    animate_normals: bool,
-    animate_tangents: bool,
-    quiet: bool,
+    }: ExportConfig
 ) {
     meshes.sort_by(|(name_a, frame_a, _, _), (name_b, frame_b, _, _)| {
         // First sort by name
@@ -512,7 +515,7 @@ pub(crate) fn build_nonempty_buffer_vec3(
 ) -> u32 {
     use meshx::{bbox::BBox, ops::*};
 
-    let byte_length = vec.len() * mem::size_of::<[f32; 3]>();
+    let byte_length = mem::size_of_val(vec);
 
     let view = json::buffer::View::new(byte_length, data.len())
         .with_stride(mem::size_of::<[f32; 3]>())

@@ -273,12 +273,6 @@ fn try_main() -> Result<(), Error> {
         }
     }
 
-    let dt = if let Some(dt) = config.time_step {
-        dt
-    } else {
-        1.0 / config.fps as f32
-    };
-
     let pb = utils::new_progress_bar(config.quiet, mesh_meta.len());
     pb.set_message("Building Meshes");
 
@@ -314,16 +308,24 @@ fn try_main() -> Result<(), Error> {
         return Err(Error::NoMeshesFound);
     }
 
+    let dt = if let Some(dt) = config.time_step {
+        dt
+    } else {
+        1.0 / config.fps as f32
+    };
+
     export::export_clean_meshes(
         meshes,
-        config.textures,
-        config.materials,
-        config.output,
-        dt,
-        config.insert_vanishing_frames,
-        !config.no_animated_normals,
-        !config.no_animated_tangents,
-        config.quiet,
+        export::ExportConfig {
+            textures: config.textures,
+            materials: config.materials,
+            output: config.output,
+            time_step: dt,
+            insert_vanishing_frames: config.insert_vanishing_frames,
+            animate_normals: !config.no_animated_normals,
+            animate_tangents: !config.no_animated_tangents,
+            quiet: config.quiet,
+        }
     );
 
     Ok(())
