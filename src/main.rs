@@ -325,7 +325,7 @@ fn try_main() -> Result<(), Error> {
             animate_normals: !config.no_animated_normals,
             animate_tangents: !config.no_animated_tangents,
             quiet: config.quiet,
-        }
+        },
     );
 
     Ok(())

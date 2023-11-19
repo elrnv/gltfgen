@@ -431,10 +431,7 @@ pub fn export_named_meshes(
     export_config: ExportConfig,
 ) {
     let meshes = clean_named_meshes(meshes, attrib_config);
-    export_clean_meshes(
-        meshes,
-        export_config
-    );
+    export_clean_meshes(meshes, export_config);
 }
 
 pub fn export_clean_meshes(
@@ -448,7 +445,7 @@ pub fn export_clean_meshes(
         animate_normals,
         animate_tangents,
         quiet,
-    }: ExportConfig
+    }: ExportConfig,
 ) {
     meshes.sort_by(|(name_a, frame_a, _, _), (name_b, frame_b, _, _)| {
         // First sort by name

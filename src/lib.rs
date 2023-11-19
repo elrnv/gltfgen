@@ -254,7 +254,7 @@ mod tests {
                 animate_normals: false,
                 animate_tangents: false,
                 quiet: true,
-            }
+            },
         );
 
         let actual = Gltf::open(artifact).unwrap().blob;
@@ -302,7 +302,7 @@ mod tests {
                 animate_normals: false,
                 animate_tangents: false,
                 quiet: true,
-            }
+            },
         );
 
         let actual = Gltf::open(artifact).unwrap().blob;
