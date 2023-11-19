@@ -1,10 +1,11 @@
+use crate::config::{NORMAL_ATTRIB_NAME, TANGENT_ATTRIB_NAME};
 use crate::mesh::Mesh;
 use crate::AttribConfig;
 use gltf::json;
 use indexmap::map::IndexMap;
 use meshx::mesh::TriMesh;
 use meshx::topology::{FaceIndex, VertexIndex};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 type MaterialMap = IndexMap<meshx::io::obj::Material, Vec<usize>>;
 type MaterialIdMap = IndexMap<u32, Vec<usize>>;
@@ -12,6 +13,7 @@ type MaterialIdMap = IndexMap<u32, Vec<usize>>;
 #[derive(Debug)]
 pub enum AttribError {
     InvalidTexCoordAttribType(ComponentType),
+    InvalidVector3AttribType(Type),
     Mesh(meshx::attrib::Error),
 }
 
@@ -23,6 +25,11 @@ impl std::fmt::Display for AttribError {
             AttribError::InvalidTexCoordAttribType(t) => write!(
                 f,
                 "Invalid texture coordinate attribute type detected: {:?}. Skipping...",
+                t
+            ),
+            AttribError::InvalidVector3AttribType(t) => write!(
+                f,
+                "Invalid 3D vector attribute type detected: {:?}. Skipping...",
                 t
             ),
             AttribError::Mesh(e) => write!(f, "Mesh: {}", e),
@@ -55,6 +62,8 @@ pub struct AttribTransfer {
     pub color_attribs_to_keep: Vec<Attribute>,
     pub tex_attribs_to_keep: Vec<TextureAttribute>,
     pub material_ids: Option<MaterialIds>,
+    pub normal_attrib: Vec<[f32; 3]>,
+    pub tangent_attrib: Vec<[f32; 3]>,
 }
 
 /// Find per face material IDs in the given mesh by probing a given integer type `I`.
@@ -95,7 +104,31 @@ pub fn clean_mesh(
     config: AttribConfig<'_>,
     mut process_attrib_error: impl FnMut(AttribError),
 ) -> AttribTransfer {
-    // First we remove all attributes we want to keep.
+    // First we promote any face-vertex attributes to vertex attributes and split the mesh
+    // when needed when the face-vertex attribute values on neighbouring faces are different.
+    if let Mesh::TriMesh(mesh) = mesh {
+        config.texcoords.0.iter().for_each(|attrib| {
+            if let Err(e) = promote_texture_coordinate_attribute_to_vertices(mesh, attrib) {
+                process_attrib_error(e);
+            }
+        });
+    }
+
+    // In some cases normals and tangents are given per face-vertex instead of each vertex.
+    // This allows, for instance, to specify sharp cusps on meshes that are otherwise smooth.
+    // To preserve this effect we split the mesh when face-vertex normals do not coincide.
+    if let Mesh::TriMesh(mesh) = mesh {
+        config.attributes.0.iter().for_each(|attrib| {
+            if attrib.0 == NORMAL_ATTRIB_NAME || attrib.0 == TANGENT_ATTRIB_NAME {
+                if let Err(e) = promote_vector3_float_attribute_to_vertices(mesh, attrib) {
+                    process_attrib_error(e);
+                }
+            }
+        });
+    }
+
+    // Next we remove all attributes we want to keep.
+
     let tex_attribs_to_keep: Vec<_> = if let Mesh::TriMesh(mesh) = mesh {
         config
             .texcoords
@@ -103,7 +136,7 @@ pub fn clean_mesh(
             .iter()
             .enumerate()
             .filter_map(|(id, attrib)| {
-                match promote_and_remove_texture_coordinate_attribute(mesh, attrib, id) {
+                match remove_texture_coordinate_attribute(mesh, attrib, id) {
                     Err(e) => {
                         process_attrib_error(e);
                         None
@@ -115,6 +148,21 @@ pub fn clean_mesh(
     } else {
         Vec::new()
     };
+
+    // Remove normal and tangent attributes first.
+    let mut normal_attrib = Vec::new();
+    let mut tangent_attrib = Vec::new();
+    config.attributes.0.iter().for_each(|attrib| {
+        if attrib.0 == NORMAL_ATTRIB_NAME && normal_attrib.is_empty() {
+            normal_attrib = remove_attribute(mesh, attrib)
+                .and_then(|a| a.attribute.direct_clone_into_vec::<[f32; 3]>().ok())
+                .unwrap_or_default();
+        } else if attrib.0 == TANGENT_ATTRIB_NAME && tangent_attrib.is_empty() {
+            tangent_attrib = remove_attribute(mesh, attrib)
+                .and_then(|a| a.attribute.direct_clone_into_vec::<[f32; 3]>().ok())
+                .unwrap_or_default();
+        }
+    });
 
     // It is important that these follow the tex attrib function since that can change mesh
     // topology.
@@ -183,6 +231,8 @@ pub fn clean_mesh(
         color_attribs_to_keep,
         tex_attribs_to_keep,
         material_ids,
+        normal_attrib,
+        tangent_attrib,
     }
 }
 
@@ -239,7 +289,7 @@ where
     T: PartialEq + Clone + std::fmt::Debug + 'static,
 {
     use meshx::attrib::AttribPromote;
-    let err = "Texture coordinate collisions detected. Please report this issue.";
+    let err = "Texture coordinate type collisions detected. Could not promote attribute to vertex. Please report this issue.";
     Ok(mesh
         .attrib_promote::<[T; 2], _>(name, |a, b| assert_eq!(&*a, b, "{}", err))
         .map(|_| ())
@@ -249,25 +299,36 @@ where
         })?)
 }
 
+/// Try to promote a 3D vector attribute from `FaceVertex` attribute to `Vertex`
+/// attribute.
+fn try_vec3_promote<T>(name: &str, mesh: &mut TriMesh<f32>) -> Result<(), AttribError>
+where
+    T: PartialEq + Clone + std::fmt::Debug + 'static,
+{
+    use meshx::attrib::AttribPromote;
+    let err = "Attribute type collisions detected. Could not promote attribute to vertex. Please report this issue.";
+    Ok(mesh
+        .attrib_promote::<[T; 3], _>(name, |a, b| assert_eq!(&*a, b, "{}", err))
+        .map(|_| ())?)
+}
+
 /// Promote the given attribute to from a face-vertex to a vertex attribute.
 ///
-/// This is done by splitting the vertex positions for
-/// unique values of the given face-vertex attribute. Then remove this attribute from the mesh for
-/// later transfer.
+/// This is done by splitting the vertex positions for unique values of the
+/// given face-vertex attribute.
 ///
-/// If the given texture attribute is already a vertex attribute, skip the promotion stage.
-fn promote_and_remove_texture_coordinate_attribute(
+/// If the given attribute is already a vertex attribute, skip it.
+fn promote_texture_coordinate_attribute_to_vertices(
     mesh: &mut TriMesh<f32>,
     attrib: (&String, &ComponentType),
-    id: usize,
-) -> Result<TextureAttribute, AttribError> {
+) -> Result<(), AttribError> {
     use meshx::attrib::Attrib;
     use meshx::topology::FaceVertexIndex;
 
     if mesh.attrib_exists::<FaceVertexIndex>(attrib.0) {
-        // Split the mesh according to texture attributes such that every unique texture attribute
-        // value will have its own unique vertex. This is required since gltf doesn't support multiple
-        // topologies.
+        // Split the mesh according to texture attributes such that every unique
+        // texture attribute value will have its own unique vertex. This is
+        // required since gltf doesn't support multiple topologies.
 
         mesh.split_vertices_by_face_vertex_attrib(attrib.0);
 
@@ -276,8 +337,44 @@ fn promote_and_remove_texture_coordinate_attribute(
             ComponentType::U16 => try_tex_coord_promote::<u16>(attrib.0, mesh),
             ComponentType::F32 => try_tex_coord_promote::<f32>(attrib.0, mesh),
             t => Err(AttribError::InvalidTexCoordAttribType(t)),
-        }?;
+        }
+    } else {
+        Ok(())
     }
+}
+
+/// Promote the given attribute to from a face-vertex to a vertex attribute.
+///
+/// This is done by splitting the vertex positions for unique values of the
+/// given face-vertex attribute.
+///
+/// If the given attribute is already a vertex attribute, skip it.
+fn promote_vector3_float_attribute_to_vertices(
+    mesh: &mut TriMesh<f32>,
+    attrib: (&String, &Type),
+) -> Result<(), AttribError> {
+    use meshx::attrib::Attrib;
+    use meshx::topology::FaceVertexIndex;
+
+    if mesh.attrib_exists::<FaceVertexIndex>(attrib.0) {
+        mesh.split_vertices_by_face_vertex_attrib(attrib.0);
+
+        match *attrib.1 {
+            Type::Vec3(ComponentType::F32) => try_vec3_promote::<f32>(attrib.0, mesh),
+            t => Err(AttribError::InvalidVector3AttribType(t)),
+        }
+    } else {
+        Ok(())
+    }
+}
+
+/// Remove the given vertex attribute.
+fn remove_texture_coordinate_attribute(
+    mesh: &mut TriMesh<f32>,
+    attrib: (&String, &ComponentType),
+    id: usize,
+) -> Result<TextureAttribute, AttribError> {
+    use meshx::attrib::Attrib;
 
     // The attribute has been promoted, remove it from the mesh for later use.
     Ok(mesh
@@ -367,7 +464,7 @@ macro_rules! call_typed_fn {
  * Parsing attributes from command line
  */
 
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ComponentType {
     /// Signed 8-bit integer. Corresponds to `GL_BYTE`.
     #[serde(alias = "i8")]
@@ -409,7 +506,7 @@ impl From<ComponentType> for json::accessor::ComponentType {
     }
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Type {
     /// Signed 8-bit integer. Corresponds to `GL_BYTE`.
     #[serde(alias = "i8")]
@@ -492,7 +589,7 @@ impl From<Type> for (json::accessor::Type, json::accessor::ComponentType) {
 
 // Note that indexmap is essential here since we want to preserve the order of the texture
 // coordinate attributes since we are using it explicitly in the gltf output.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TextureAttributeInfo(pub IndexMap<String, ComponentType>);
 
 impl Default for TextureAttributeInfo {
@@ -501,7 +598,7 @@ impl Default for TextureAttributeInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AttributeInfo(pub IndexMap<String, Type>);
 
 impl Default for AttributeInfo {

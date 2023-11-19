@@ -1,13 +1,13 @@
 use gltf::json;
 use json::validation::Checked::Valid;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /*
  * Parsing material info from command line
  */
 
 /// Specifies the texture to be used by the material.
-#[derive(Copy, Clone, Debug, PartialEq, Default, Deserialize)]
+#[derive(Copy, Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum TextureRef {
     Some {
@@ -48,7 +48,7 @@ fn default_roughness() -> f32 {
     0.5
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct MaterialInfo {
     #[serde(default)]
     pub name: String,

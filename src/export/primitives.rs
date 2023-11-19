@@ -11,6 +11,8 @@ use json::validation::Checked::Valid;
 pub(crate) fn build_primitives(
     mode: Checked<json::mesh::Mode>,
     pos_acc_index: u32,
+    nml_acc_index: Option<json::Index<json::Accessor>>,
+    tng_acc_index: Option<json::Index<json::Accessor>>,
     attrib_transfer: &AttribTransfer,
     attrib_acc_indices: &[u32],
     color_attrib_acc_indices: &[u32],
@@ -27,6 +29,12 @@ pub(crate) fn build_primitives(
             Valid(json::mesh::Semantic::Positions),
             json::Index::new(pos_acc_index),
         );
+        if let Some(idx) = nml_acc_index {
+            map.insert(Valid(json::mesh::Semantic::Normals), idx);
+        }
+        if let Some(idx) = tng_acc_index {
+            map.insert(Valid(json::mesh::Semantic::Tangents), idx);
+        }
         // Color attributes
         for (id, (Attribute { .. }, &attrib_acc_index)) in attrib_transfer
             .color_attribs_to_keep
@@ -50,31 +58,18 @@ pub(crate) fn build_primitives(
                 json::Index::new(attrib_acc_index),
             );
         }
-        // Custom attributes, normals and tangents
-        for (Attribute { name, type_, .. }, &attrib_acc_index) in attrib_transfer
+        // Custom attributes
+        for (Attribute { name, .. }, &attrib_acc_index) in attrib_transfer
             .attribs_to_keep
             .iter()
             .zip(attrib_acc_indices.iter())
         {
             use heck::ToShoutySnakeCase;
-            use crate::{Type, ComponentType};
 
-            if name == "N" && type_ == &Type::Vec3(ComponentType::F32) {
-                map.insert(
-                    Valid(json::mesh::Semantic::Normals),
-                    json::Index::new(attrib_acc_index),
-                );
-            } else if name == "T" && type_ == &Type::Vec3(ComponentType::F32) {
-                map.insert(
-                    Valid(json::mesh::Semantic::Tangents),
-                    json::Index::new(attrib_acc_index),
-                );
-            } else {
-                map.insert(
-                    Valid(json::mesh::Semantic::Extras(name.to_shouty_snake_case())),
-                    json::Index::new(attrib_acc_index),
-                );
-            }
+            map.insert(
+                Valid(json::mesh::Semantic::Extras(name.to_shouty_snake_case())),
+                json::Index::new(attrib_acc_index),
+            );
         }
         map
     };

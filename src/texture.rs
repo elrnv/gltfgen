@@ -1,6 +1,6 @@
 use gltf::json;
 use json::validation::Checked;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /*
  * Parsing textures from command line
@@ -8,7 +8,7 @@ use serde::Deserialize;
  */
 
 /// Magnification filter.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, Default)]
 pub enum MagFilter {
     /// Corresponds to `GL_NEAREST`.
     #[serde(alias = "nearest")]
@@ -38,7 +38,7 @@ impl From<MagFilter> for Option<Checked<json::texture::MagFilter>> {
 }
 
 /// Minification filter.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, Default)]
 pub enum MinFilter {
     /// Corresponds to `GL_NEAREST`.
     #[serde(alias = "nearest")]
@@ -92,7 +92,7 @@ impl From<MinFilter> for Option<Checked<json::texture::MinFilter>> {
 }
 
 /// Texture co-ordinate wrapping mode.
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, Eq, PartialEq, Default)]
 pub enum WrappingMode {
     /// Corresponds to `GL_CLAMP_TO_EDGE`.
     #[serde(alias = "clamp_to_edge")]
@@ -125,7 +125,7 @@ impl From<WrappingMode> for Checked<json::texture::WrappingMode> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Default, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Default, Serialize, Deserialize)]
 pub struct TextureInfo {
     pub image: ImageInfo,
     #[serde(default)]
@@ -138,7 +138,7 @@ pub struct TextureInfo {
     pub min_filter: MinFilter,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum ImageInfo {
     /// Determine how to output the image automatically.
     Auto(String),

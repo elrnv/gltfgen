@@ -16,12 +16,14 @@ mod primitives;
 
 use animation::*;
 pub(crate) use builders::*;
-use meshx::ops::BoundingBox;
 use num_traits::ToPrimitive;
 use primitives::*;
 
 use crate::attrib::*;
 use crate::clean_named_meshes;
+use crate::config::NORMAL_ATTRIB_NAME;
+use crate::config::POSITION_ATTRIB_NAME;
+use crate::config::TANGENT_ATTRIB_NAME;
 use crate::material::*;
 use crate::mesh::Mesh;
 use crate::texture::*;
@@ -77,21 +79,35 @@ fn to_padded_byte_vector<T>(vec: Vec<T>) -> Vec<u8> {
     new_vec
 }
 
-// A single morph target.
+/// A single morph target.
+#[derive(Clone, Debug, Default)]
 pub struct Morph {
     pub frame: u32,
     pub position_disp: Vec<[f32; 3]>,
     pub normal_disp: Vec<[f32; 3]>,
     pub tangent_disp: Vec<[f32; 3]>,
-    // Texcoord displacements
-    //
-    // These can be given as Vec3 of floats or unsigned bytes or short integers.
-    pub texcoord_disp: Attribute,
-    // Color deltas
-    //
-    // These can be given as Vec3 or Vec4 of floats or unsigned bytes or short
-    // integers.
-    pub color_disp: Attribute,
+    // Currently unsupported by the gltf crate:
+    // /// Texcoord displacements
+    // pub texcoord_disp: Vec<[f32; 3]>,
+    // /// Color deltas
+    // pub color_disp: Vec<[f32; 4]>,
+}
+
+impl Morph {
+    /// Construct a new morph target from a given set of position displacements.
+    ///
+    /// Other animated properties like tangents and texture coordinates are
+    /// assumed to not have changed by default.
+    pub fn new(frame: u32, position_disp: Vec<[f32; 3]>) -> Morph {
+        Morph {
+            frame,
+            position_disp,
+            normal_disp: Vec::new(),
+            tangent_disp: Vec::new(),
+            // texcoord_disp: vec![[0.0; 3]; n],
+            // color_disp: vec![[0.0; 4]; n],
+        }
+    }
 }
 
 // One node representing a mesh with a set of morph targets.
@@ -107,6 +123,8 @@ pub struct Node {
 fn into_nodes(
     meshes: Vec<(String, u32, Mesh, AttribTransfer)>,
     insert_vanishing_frames: bool,
+    animate_normals: bool,
+    animate_tangents: bool,
     quiet: bool,
 ) -> Vec<Node> {
     let pb = new_progress_bar(quiet, meshes.len());
@@ -124,12 +142,7 @@ fn into_nodes(
 
     if let Some((name, first_frame, mesh, attrib_transfer)) = mesh_iter.next() {
         let morphs = if insert_vanishing_frames && first_frame > 0 {
-            vec![Morph {
-                frame: first_frame - 1,
-                position_disp: vanishing_disp(&mesh),
-                //tODO: implement animated normals and other attributes.
-                normal_disp: ,
-            }]
+            vec![Morph::new(first_frame - 1, vanishing_disp(&mesh))]
         } else {
             Vec::new()
         };
@@ -151,24 +164,43 @@ fn into_nodes(
                 ref mut morphs,
                 ..
             } = *out.last_mut().unwrap();
+
+            // Check if topology, mesh name or material has changed in this frame.
             if mesh.eq_topo(&next_mesh)
                 && name == &next_name
                 && attrib_transfer.material_ids == next_attrib_transfer.material_ids
-            // same material
             {
-                // Same topology, convert positions to displacements.
-                let displacements: Vec<_> = next_mesh
+                // Convert positions to displacements.
+                let position_disp: Vec<_> = next_mesh
                     .vertex_position_iter()
                     .zip(mesh.vertex_position_iter())
                     .map(|(a, b)| [a[0] - b[0], a[1] - b[1], a[2] - b[2]])
                     .collect();
-                morphs.push((frame, displacements));
+                let mut morph = Morph::new(frame, position_disp);
+
+                if animate_normals {
+                    morph.normal_disp = next_attrib_transfer
+                        .normal_attrib
+                        .iter()
+                        .zip(attrib_transfer.normal_attrib.iter())
+                        .map(|(a, b)| [a[0] - b[0], a[1] - b[1], a[2] - b[2]])
+                        .collect();
+                }
+                if animate_tangents {
+                    morph.tangent_disp = next_attrib_transfer
+                        .tangent_attrib
+                        .iter()
+                        .zip(attrib_transfer.tangent_attrib.iter())
+                        .map(|(a, b)| [a[0] - b[0], a[1] - b[1], a[2] - b[2]])
+                        .collect();
+                }
+                morphs.push(morph);
             } else {
                 let next_morphs = if insert_vanishing_frames {
                     // First insert another vanishing frame at the end of the previous sequence.
-                    morphs.push((frame, vanishing_disp(&mesh)));
+                    morphs.push(Morph::new(frame, vanishing_disp(mesh)));
                     // Return initial morph target with all vertices put at the origin.
-                    vec![(frame - 1, vanishing_disp(&next_mesh))]
+                    vec![Morph::new(frame - 1, vanishing_disp(&next_mesh))]
                 } else {
                     Vec::new()
                 };
@@ -386,6 +418,8 @@ pub fn export_named_meshes(
     output: PathBuf,
     time_step: f32,
     insert_vanishing_frames: bool,
+    animate_normals: bool,
+    animate_tangents: bool,
     quiet: bool,
 ) {
     let meshes = clean_named_meshes(meshes, attrib_config);
@@ -396,6 +430,8 @@ pub fn export_named_meshes(
         output,
         time_step,
         insert_vanishing_frames,
+        animate_normals,
+        animate_tangents,
         quiet,
     );
 }
@@ -407,6 +443,8 @@ pub fn export_clean_meshes(
     output: PathBuf,
     time_step: f32,
     insert_vanishing_frames: bool,
+    animate_normals: bool,
+    animate_tangents: bool,
     quiet: bool,
 ) {
     meshes.sort_by(|(name_a, frame_a, _, _), (name_b, frame_b, _, _)| {
@@ -416,7 +454,13 @@ pub fn export_clean_meshes(
 
     // Convert sequence of meshes into meshes with morph targets by erasing repeating topology
     // data.
-    let mut morphed_meshes = into_nodes(meshes, insert_vanishing_frames, quiet);
+    let mut morphed_meshes = into_nodes(
+        meshes,
+        insert_vanishing_frames,
+        animate_normals,
+        animate_tangents,
+        quiet,
+    );
 
     // Load local materials from loaded objs into our configuration array.
     for Node {
@@ -459,6 +503,67 @@ pub fn export_nodes(
     write_file(root, data, output, quiet);
 }
 
+pub(crate) fn build_nonempty_buffer_vec3(
+    vec: &[[f32; 3]],
+    accessors: &mut Vec<json::Accessor>,
+    buffer_views: &mut Vec<json::buffer::View>,
+    data: &mut Vec<u8>,
+    name: &str,
+) -> u32 {
+    use meshx::{bbox::BBox, ops::*};
+
+    let byte_length = vec.len() * mem::size_of::<[f32; 3]>();
+
+    let view = json::buffer::View::new(byte_length, data.len())
+        .with_stride(mem::size_of::<[f32; 3]>())
+        .with_target(json::buffer::Target::ArrayBuffer);
+    let view_index = buffer_views.len();
+    buffer_views.push(view);
+
+    let mut bbox = BBox::empty();
+    for x in vec.iter() {
+        bbox.absorb(*x);
+        for &coord in x.iter() {
+            data.write_f32::<LE>(coord).unwrap();
+        }
+    }
+
+    let disp_acc = json::Accessor::new(vec.len(), GltfComponentType::F32)
+        .with_buffer_view(view_index)
+        .with_type(GltfType::Vec3)
+        .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
+
+    let disp_acc = if !name.is_empty() {
+        disp_acc.with_name(name.to_string())
+    } else {
+        disp_acc
+    };
+
+    let acc_index = accessors.len() as u32;
+    accessors.push(disp_acc);
+    acc_index
+}
+
+pub(crate) fn build_buffer_vec3(
+    vec: &[[f32; 3]],
+    accessors: &mut Vec<json::Accessor>,
+    buffer_views: &mut Vec<json::buffer::View>,
+    data: &mut Vec<u8>,
+    name: &str,
+) -> Option<json::Index<json::Accessor>> {
+    if !vec.is_empty() {
+        Some(json::Index::new(build_nonempty_buffer_vec3(
+            vec,
+            accessors,
+            buffer_views,
+            data,
+            name,
+        )))
+    } else {
+        None
+    }
+}
+
 fn build_gltf_parts(
     morphed_meshes: Vec<Node>,
     mut textures: Vec<TextureInfo>,
@@ -496,8 +601,6 @@ fn build_gltf_parts(
         morphs,
     } in morphed_meshes.into_iter()
     {
-        let bbox = mesh.bounding_box();
-
         let (vertex_positions, indices) = mesh.build_topology(
             &attrib_transfer,
             &mut data,
@@ -506,27 +609,29 @@ fn build_gltf_parts(
         );
 
         // Push positions to data buffer.
-        let byte_length = vertex_positions.len() * mem::size_of::<[f32; 3]>();
-        let pos_view = json::buffer::View::new(byte_length, data.len())
-            .with_stride(mem::size_of::<[f32; 3]>())
-            .with_target(json::buffer::Target::ArrayBuffer);
+        let pos_acc_index = build_nonempty_buffer_vec3(
+            vertex_positions,
+            &mut accessors,
+            &mut buffer_views,
+            &mut data,
+            POSITION_ATTRIB_NAME,
+        );
 
-        let pos_view_index = buffer_views.len();
-        buffer_views.push(pos_view);
-
-        for pos in vertex_positions.iter() {
-            for &coord in pos.iter() {
-                data.write_f32::<LE>(coord).unwrap();
-            }
-        }
-
-        let pos_acc = json::Accessor::new(vertex_positions.len(), GltfComponentType::F32)
-            .with_buffer_view(pos_view_index)
-            .with_type(GltfType::Vec3)
-            .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
-
-        let pos_acc_index = accessors.len() as u32;
-        accessors.push(pos_acc);
+        // Push normals and tangents to data buffer if any.
+        let nml_acc_index = build_buffer_vec3(
+            &attrib_transfer.normal_attrib,
+            &mut accessors,
+            &mut buffer_views,
+            &mut data,
+            NORMAL_ATTRIB_NAME,
+        );
+        let tng_acc_index = build_buffer_vec3(
+            &attrib_transfer.tangent_attrib,
+            &mut accessors,
+            &mut buffer_views,
+            &mut data,
+            TANGENT_ATTRIB_NAME,
+        );
 
         // Push color vertex attribute
         let color_attrib_acc_indices: Vec<_> = attrib_transfer
@@ -707,6 +812,8 @@ fn build_gltf_parts(
         let primitives = build_primitives(
             mode,
             pos_acc_index,
+            nml_acc_index,
+            tng_acc_index,
             &attrib_transfer,
             &attrib_acc_indices,
             &color_attrib_acc_indices,

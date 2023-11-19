@@ -1,11 +1,10 @@
-use std::io::BufReader;
 use std::path::PathBuf;
 
 use clap::Parser;
 use console::style;
+use gltfgen::config::Config;
 use indicatif::ParallelProgressIterator;
 use rayon::prelude::*;
-use thiserror::Error; // For colouring log messages.
 
 use gltfgen::log;
 use gltfgen::*;
@@ -22,23 +21,23 @@ located in `./texture.png` to be used as a texture.
 
 To generate an animated binary glTF file named `output.glb` in the current directory:
 
-$ gltfgen output.glb \"./meshes/animation_#.vtk\"
+$ gltfgen -o output.glb \"./meshes/animation_#.vtk\"
 
 
 This will assume 24 frames per second (FPS). You can specify FPS manually with the `-f` option as \
 follows:
 
-$ gltfgen -f 100 output.glb \"./meshes/animation_#.vtk\"
+$ gltfgen -f 100 -o output.glb \"./meshes/animation_#.vtk\"
 
 
 Alternatively, to specify a time step like 0.01 seconds between frames, use the `-t` option:
 
-$ gltfgen -t 0.01 output.glb \"./meshes/animation_#.vtk\"
+$ gltfgen -t 0.01 -o output.glb \"./meshes/animation_#.vtk\"
 
 
 To add color to the glTF from an attribute in the vtk file use the `-c` option:
 
-$ gltfgen -c '{\"Cd\":vec3(f32)}' output.glb \"./meshes/animation_#.vtk\"
+$ gltfgen -c '{\"Cd\":vec3(f32)}' -o output.glb \"./meshes/animation_#.vtk\"
 
 
 To add texture to the output glTF, use the `-u` option to specify texture coordinates, \
@@ -48,7 +47,7 @@ material that binds the image to the texture coordinates:
 $ gltfgen -u '{\"uv\":f32}' \\
           -x '(image: Embed(\"./texture.png\")' \\
           -m '(name:\"texture\", base_texture:(index:0,texcoord:0))' \\
-          output.glb \"./meshes/animation_#.vtk\"
+          -o output.glb \"./meshes/animation_#.vtk\"
 
 NOTE: In PowerShell, double quotes should be doubled.
 ";
@@ -57,52 +56,67 @@ NOTE: In PowerShell, double quotes should be doubled.
 #[clap(author, version, about = ABOUT, name = "gltfgen")]
 #[clap(after_long_help(EXAMPLES))]
 struct Opt {
-    /// Output glTF file.
-    #[clap(name = "OUTPUT")]
-    output: PathBuf,
-
-    /// A glob pattern matching input mesh files.
-    ///
-    /// Use # to match a frame number. If more than one '#' is used, the first
-    /// match will correspond to the frame number. Note that the glob pattern
-    /// should generally by provided as a quoted string to prevent the terminal
-    /// from evaluating it.
-    ///
-    /// Strings within between braces (i.e. '{' and '}') will be used as names
-    /// for unique animations.  This means that a single output can contain
-    /// multiple animations. If more than one group is specified, the matched
-    /// strings within will be concatenated to produce a unique name.  Note that
-    /// for the time being, '{' '}' are ignored when the glob pattern is
-    /// matched.
-    #[clap(name = "PATTERN")]
-    pattern: String,
-
-    /// Silence all output.
-    #[clap(short, long)]
-    quiet: bool,
-
     #[clap(flatten)]
     config: config::Config,
 
     /// A path to the configuration file specifying how glTF files should be built.
     ///
-    /// If specified, all command line configuration is ignored.
+    /// If unspecified, gltfgen will look for a 'gltfgen.ron' or a
+    /// 'gltfgen.json' configuration file in the current working directory, and
+    /// if none found, it will use default arguments or arguments specified
+    /// on the command line.
+    ///
+    /// If specified, any explicit command line configuration will override the config loaded.
     #[clap(name = "CONFIG", long = "config")]
     config_path: Option<PathBuf>,
-}
 
-#[derive(Debug, Error)]
-enum Error {
-    #[error("{}", .0)]
-    Glob(#[from] glob::GlobError),
-    #[error("{}", .0)]
-    GlobPattern(#[from] glob::PatternError),
-    #[error("No valid meshes were found")]
-    NoMeshesFound,
-    #[error("Configuration load error: {}", .0)]
-    ConfigLoad(#[from] std::io::Error),
-    #[error("Configuration deserialization error: {}", .0)]
-    ConfigDeserialize(#[from] ron::error::SpannedError),
+    /// Print the configuration in JSON format, but don't run the generator.
+    ///
+    /// This is useful for debugging or for generating a configuration file that
+    /// can later be reused. For example, run
+    ///
+    /// $ gltfgen -f 60 --print-json-config > gltfgen.json
+    ///
+    /// to create a JSON configuration file initialized with default parameters and 60 fps output.
+    /// This file can then later be used as
+    ///
+    /// $ gltfgen --config gltfgen.json "<PATTERN>"
+    ///
+    /// without specifying the '-f' flag explicitly every time. (Replace
+    /// <PATTERN> with an actual sequence pattern).
+    ///
+    /// The --quiet flag is ignored.
+    #[clap(long)]
+    print_json_config: bool,
+
+    /// Print the configuration in RON format, but don't run the generator.
+    ///
+    /// This is useful for debugging or for generating a configuration file that
+    /// can later be reused. For example, run
+    ///
+    /// $ gltfgen -f 60 --print-ron-config > gltfgen.ron
+    ///
+    /// to create a RON configuration file initialized with default parameters and 60 fps output.
+    /// This file can then later be used as
+    ///
+    /// $ gltfgen --config gltfgen.ron "<PATTERN>"
+    ///
+    /// without specifying the '-f' flag explicitly every time. (Replace
+    /// <PATTERN> with an actual sequence pattern).
+    ///
+    /// The --quiet flag is ignored.
+    #[clap(long)]
+    print_ron_config: bool,
+
+    /// Print the configuration and required input argments, but don't run the generator.
+    ///
+    /// This is only useful for debugging. For printing the config using a
+    /// specific format like JSON or RON, use either of --print-json-config or
+    /// --print-ron-config options.
+    ///
+    /// The --quiet flag is ignored.
+    #[clap(long)]
+    print_full_config: bool,
 }
 
 fn main() {
@@ -112,23 +126,49 @@ fn main() {
     }
 }
 fn try_main() -> Result<(), Error> {
-    let opt = Opt::parse();
+    let cli = clap::Command::new("gltfgen");
+    let cli = <Opt as clap::Args>::augment_args(cli);
+    let matches = cli.get_matches();
+    let opt = <Opt as clap::FromArgMatches>::from_arg_matches(&matches).unwrap();
 
     // Try to load the config file if specified.
     let config = if let Some(path) = opt.config_path {
-        use std::fs::File;
-        File::open(path).map_err(Error::from).and_then(|f| {
-            let reader = BufReader::new(f);
-            Ok(ron::de::from_reader(reader)?)
-        })?
+        Config::load_with_override(path, &opt.config, &matches)?
     } else {
-        opt.config
+        // Check if there is a local configuration file with the name "gltfgen.ron" or "gltfgen.json" and try to load that.
+        if let Ok(local_config) = Config::load_with_override("./gltfgen.ron", &opt.config, &matches)
+        {
+            print_info(vec![(1, "Using local ./gltfgen.ron config.".to_string())]);
+            local_config
+        } else if let Ok(local_config) =
+            Config::load_with_override("./gltfgen.json", &opt.config, &matches)
+        {
+            print_info(vec![(1, "Using local ./gltfgen.json config.".to_string())]);
+            local_config
+        } else {
+            // Otherwise just use whatever was specified on the commandline.
+            opt.config
+        }
     };
 
-    let pattern = if opt.pattern.starts_with("./") {
-        &opt.pattern[2..]
+    if opt.print_full_config {
+        println!("{:#?}", config);
+        return Ok(());
+    } else if opt.print_ron_config {
+        println!(
+            "{}",
+            ron::ser::to_string_pretty(&config, ron::ser::PrettyConfig::default())?
+        );
+        return Ok(());
+    } else if opt.print_json_config {
+        println!("{}", serde_json::to_string(&config)?);
+        return Ok(());
+    }
+
+    let pattern = if config.pattern.starts_with("./") {
+        &config.pattern[2..]
     } else {
-        &opt.pattern[..]
+        &config.pattern[..]
     };
 
     let regex = glob_to_regex(pattern);
@@ -145,7 +185,7 @@ fn try_main() -> Result<(), Error> {
         require_literal_leading_dot: false,
     };
 
-    let pb = utils::new_spinner(opt.quiet);
+    let pb = utils::new_spinner(config.quiet);
 
     pb.set_prefix("Looking for files");
 
@@ -212,7 +252,7 @@ fn try_main() -> Result<(), Error> {
     // Prune mesh meta before building meshes
     if config.step > 1 {
         if let Some(lowest_frame_num) = lowest_frame_num {
-            let pb = utils::new_progress_bar(opt.quiet, mesh_meta.len());
+            let pb = utils::new_progress_bar(config.quiet, mesh_meta.len());
             pb.set_message("Pruning frames");
 
             mesh_meta = mesh_meta
@@ -239,7 +279,7 @@ fn try_main() -> Result<(), Error> {
         1.0 / config.fps as f32
     };
 
-    let pb = utils::new_progress_bar(opt.quiet, mesh_meta.len());
+    let pb = utils::new_progress_bar(config.quiet, mesh_meta.len());
     pb.set_message("Building Meshes");
 
     let load_config = LoadConfig {
@@ -278,10 +318,12 @@ fn try_main() -> Result<(), Error> {
         meshes,
         config.textures,
         config.materials,
-        opt.output,
+        config.output,
         dt,
         config.insert_vanishing_frames,
-        opt.quiet,
+        !config.no_animated_normals,
+        !config.no_animated_tangents,
+        config.quiet,
     );
 
     Ok(())

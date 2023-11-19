@@ -8,12 +8,14 @@ pub mod utils;
 #[macro_use]
 pub mod attrib;
 pub mod config;
+pub mod error;
 pub mod export;
 pub mod material;
 pub mod mesh;
 pub mod texture;
 
 pub use attrib::*;
+pub use error::*;
 pub use material::*;
 pub use texture::*;
 pub use utils::*;
@@ -248,6 +250,8 @@ mod tests {
             artifact.into(),
             dt,
             false,
+            false,
+            false,
             true,
         );
 
@@ -291,6 +295,8 @@ mod tests {
             attrib_config,
             artifact.into(),
             dt,
+            false,
+            false,
             false,
             true,
         );

@@ -3,6 +3,7 @@ use meshx::mesh::vertex_positions::VertexPositions;
 use meshx::mesh::{PointCloud, PolyMesh, TetMesh, TriMesh, TriMeshExt};
 use meshx::topology::NumVertices;
 
+use crate::config::INDEX_ATTRIB_NAME;
 use crate::{AttribTransfer, MaterialIds};
 
 /// Supported output mesh types.
@@ -202,6 +203,7 @@ fn push_indices(
     buffer_views: &mut Vec<json::buffer::View>,
     accessors: &mut Vec<json::Accessor>,
     indices: &mut Vec<json::Index<json::Accessor>>,
+    name: String,
 ) {
     use crate::export::{AccessorBuilder, BufferViewBuilder};
     use byteorder::{WriteBytesExt, LE};
@@ -228,7 +230,8 @@ fn push_indices(
 
     let idx_acc = json::Accessor::new(num_indices, json::accessor::ComponentType::U32)
         .with_buffer_view(buffer_views.len())
-        .with_min_max(&[min_index][..], &[max_index][..]);
+        .with_min_max(&[min_index][..], &[max_index][..])
+        .with_name(name);
 
     buffer_views.push(indices_view);
     let idx_acc_index = accessors.len() as u32;
@@ -252,7 +255,7 @@ fn build_indices(
         }
         Some(MaterialIds::Global { map }) => {
             // Each face has a unique material id, split indices into sections corresponding to the same material id.
-            for face_indices in map.values() {
+            for (i, face_indices) in map.values().enumerate() {
                 push_indices(
                     trimesh.indices.as_slice(),
                     face_indices.iter().cloned(),
@@ -260,6 +263,7 @@ fn build_indices(
                     buffer_views,
                     accessors,
                     &mut indices,
+                    format!("{}{}", INDEX_ATTRIB_NAME, i),
                 );
             }
         }
@@ -272,6 +276,7 @@ fn build_indices(
                 buffer_views,
                 accessors,
                 &mut indices,
+                INDEX_ATTRIB_NAME.to_string(),
             );
         }
     }

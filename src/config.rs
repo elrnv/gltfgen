@@ -1,7 +1,25 @@
-use clap::Parser;
-use serde::Deserialize;
+use std::{io::BufReader, path::Path};
 
-use crate::{AttributeInfo, MaterialInfo, TextureAttributeInfo, TextureInfo};
+use clap::{ArgMatches, Parser};
+use serde::{Deserialize, Serialize};
+
+use crate::{AttributeInfo, Error, MaterialInfo, TextureAttributeInfo, TextureInfo};
+
+// Only a single normal and tangent attributes are supported on input meshes.
+// If the input mesh format uses special attributes to store these quantities, then this
+// name is inconsequential.
+pub const NORMAL_ATTRIB_NAME: &str = "N";
+pub const TANGENT_ATTRIB_NAME: &str = "T";
+
+// Additional attribute (really accessor) names to be used on the output mainly for debugging.
+// This helps to identify which accessors represent which data in the output gltf.
+pub const INDEX_ATTRIB_NAME: &str = "I";
+pub const POSITION_ATTRIB_NAME: &str = "P";
+pub const POSITION_DISPLACEMENT_ATTRIB_NAME: &str = "dP";
+pub const NORMAL_DISPLACEMENT_ATTRIB_NAME: &str = "dN";
+pub const TANGENT_DISPLACEMENT_ATTRIB_NAME: &str = "dT";
+pub const TIME_ATTRIB_NAME: &str = "time";
+pub const WEIGHTS_ATTRIB_NAME: &str = "weights";
 
 fn default_fps() -> u32 {
     24
@@ -14,8 +32,32 @@ fn default_mtl_id() -> String {
 }
 
 /// Output configuration for the generated glTF.
-#[derive(Parser, Debug, Deserialize)]
+#[derive(Parser, Debug, Serialize, Deserialize)]
 pub struct Config {
+    /// A glob pattern matching input mesh files.
+    ///
+    /// Use # to match a frame number. If more than one '#' is used, the first
+    /// match will correspond to the frame number. Note that the glob pattern
+    /// should generally by provided as a quoted string to prevent the terminal
+    /// from evaluating it.
+    ///
+    /// Strings within between braces (i.e. '{' and '}') will be used as names
+    /// for unique animations.  This means that a single output can contain
+    /// multiple animations. If more than one group is specified, the matched
+    /// strings within will be concatenated to produce a unique name.  Note that
+    /// for the time being, '{' '}' are ignored when the glob pattern is
+    /// matched.
+    #[clap(name = "PATTERN", default_value = "./#.obj")]
+    pub pattern: String,
+
+    /// Output glTF file.
+    #[clap(short, long, default_value = "./out.glb")]
+    pub output: std::path::PathBuf,
+
+    /// Silence all output.
+    #[clap(short, long)]
+    pub quiet: bool,
+
     /// Frames per second.
     ///
     /// 1/fps gives the time step between discrete frames. If 'time_step' is also provided, this
@@ -94,7 +136,7 @@ pub struct Config {
     /// The dictionary string should have the following pattern:
     ///
     /// '{"attribute1":type1(component1), "attribute2":type2(component2), ..}'
-    /// 
+    ///
     /// Use this to specify custom attributes as well as special attributes like
     /// normals and tangents, which are expected to be named "N" and "T"
     /// respectively. If an input file does not have a specific way to specify
@@ -121,7 +163,7 @@ pub struct Config {
     /// Scalar types may be specified without the 'Scalar(..)', but with the
     /// component type directly as 'attribute: F32' instead of 'attribute:
     /// Scalar(F32)'.
-    /// 
+    ///
     /// If this flag is omitted, then gltfgen looks for normal vertex attributes
     /// named "N" by default. This will pick up dedicated normal attributes in
     /// formats like 'vn' in '.obj' files and NORMALS in '.vtk' files.
@@ -144,7 +186,12 @@ pub struct Config {
     ///
     /// '{"temperature":F32, "force":Vec3(F32), "material":Scalar(u32)}'
     ///
-    #[clap(value_name = "ATTRIBS", short, long, default_value = "{\"N\":Vec3(f32)}")]
+    #[clap(
+        value_name = "ATTRIBS",
+        short,
+        long,
+        default_value = "{\"N\":Vec3(f32)}"
+    )]
     #[serde(default)]
     pub attributes: AttributeInfo,
 
@@ -163,7 +210,7 @@ pub struct Config {
     ///
     /// which correspond to 'GL_UNSIGNED_BYTE', 'GL_UNSIGNED_SHORT', and
     /// 'GL_FLOAT' respectively.
-    /// 
+    ///
     /// If this flag is omitted, then gltfgen looks for texture attributes
     /// named "uv" by default. This will pick up dedicated texture attributes in
     /// formats like 'vt' in '.obj' files and TEXTURE_COORDINATES in '.vtk' files.
@@ -315,4 +362,83 @@ pub struct Config {
     #[clap(long)]
     #[serde(default)]
     pub insert_vanishing_frames: bool,
+
+    /// Skip animated normals to reduce file size.
+    ///
+    /// Normals are still transferred for the base mesh for each output node if
+    /// '"N": Vec3(f32)' is specified in the '--attributes' option.
+    #[clap(long)]
+    #[serde(default)]
+    pub no_animated_normals: bool,
+
+    /// Skip animated tangents to reduce file size.
+    ///
+    /// Tangents are still transferred for the base mesh for each output node if
+    /// '"T": Vec3(f32)' is specified in the '--attributes' option.
+    #[clap(long)]
+    #[serde(default)]
+    pub no_animated_tangents: bool,
+}
+
+impl Config {
+    pub fn load_with_override(
+        path: impl AsRef<Path>,
+        other: &Config,
+        matches: &ArgMatches,
+    ) -> Result<Config, Error> {
+        use std::fs::File;
+        let ext = path
+            .as_ref()
+            .extension()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        let mut loaded_config: crate::config::Config =
+            File::open(path).map_err(Error::from).and_then(|f| {
+                let reader = BufReader::new(f);
+                if ext == "json" {
+                    Ok(serde_json::de::from_reader(reader)?)
+                } else if ext == "ron" {
+                    Ok(ron::de::from_reader(reader)?)
+                } else {
+                    Err(Error::ConfigUnsupported(ext))
+                }
+            })?;
+        loaded_config.override_from_matches(other, matches);
+        Ok(loaded_config)
+    }
+
+    /// Override this configuration with matches from the command line.
+    pub fn override_from_matches(&mut self, other: &Config, matches: &ArgMatches) {
+        // TODO: Figure out how to do this automatically. Otherwise we need to
+        // add fields here every time we change the Config struct.
+        // Override with options provided from command line
+        for id in matches.ids() {
+            let vs = matches.value_source(id.as_str()).unwrap();
+            if vs != clap::parser::ValueSource::CommandLine {
+                continue;
+            }
+            match id.as_str() {
+                "PATTERN" => self.pattern = other.pattern.clone(),
+                "output" => self.output = other.output.clone(),
+                "quiet" => self.quiet = other.quiet,
+                "fps" => self.fps = other.fps,
+                "time_step" => self.time_step = other.time_step,
+                "reverse" => self.reverse = other.reverse,
+                "invert_tets" => self.invert_tets = other.invert_tets,
+                "step" => self.step = other.step,
+                "colors" => self.colors = other.colors.clone(),
+                "attributes" => self.attributes = other.attributes.clone(),
+                "texcoords" => self.texcoords = other.texcoords.clone(),
+                "textures" => self.textures = other.textures.clone(),
+                "materials" => self.materials = other.materials.clone(),
+                "material_attribute" => self.material_attribute = other.material_attribute.clone(),
+                "insert_vanishing_frames" => self.insert_vanishing_frames = other.insert_vanishing_frames,
+                "no_animated_normals" => self.no_animated_normals = other.no_animated_normals,
+                "no_animated_tangents" => self.no_animated_tangents = other.no_animated_tangents,
+                "config_path" | "print_json_config" | "print_ron_config" | "print_full_config" => {} // Ignored
+                id => log::warn!("Given argument ({:?}) was not overridden with the commandline option. Please submit an issue to https://github.com/elrnv/gltfgen.", id),
+            }
+        }
+    }
 }

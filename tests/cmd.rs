@@ -16,7 +16,8 @@ fn box_triangulated() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let stderr = "Material ID was found but no materials were specified.";
     let artifact = "./tests/artifacts/box_triangulated.glb";
-    cmd.arg(artifact)
+    cmd.arg("-o")
+        .arg(artifact)
         .arg("./assets/{box_triangulated}.vtk")
         .arg("-r") // reverse polygon orientation
         .arg("-a")
@@ -37,7 +38,8 @@ fn box_rotate_simple() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let stderr = "Material ID was found but no materials were specified.";
     let artifact = "./tests/artifacts/box_rotate_simple.glb";
-    cmd.arg(artifact)
+    cmd.arg("-o")
+        .arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .arg("-r") // reverse polygon orientation
         .arg("-u")
@@ -59,7 +61,8 @@ fn box_rotate_simple() -> Result<(), Error> {
 fn box_rotate_obj() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let artifact = "./tests/artifacts/box_rotate_obj.glb";
-    cmd.arg(artifact)
+    cmd.arg("-o")
+        .arg(artifact)
         .arg("./assets/{box_rotate}_#.obj")
         .arg("-r") // reverse polygon orientation
         .arg("-x")
@@ -68,6 +71,7 @@ fn box_rotate_obj() -> Result<(), Error> {
         // .arg("{\"uv\": f32}")
         .arg("-m")
         .arg("(name:\"checkerboard\", base_texture:(index:0,texcoord:0))")
+        .arg("--no-animated-normals")
         .assert()
         .stderr(b"" as &[u8])
         .success();
@@ -85,7 +89,8 @@ fn box_rotate_obj() -> Result<(), Error> {
 fn box_rotate() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let artifact = "./tests/artifacts/box_rotate.glb";
-    cmd.arg(artifact)
+    cmd.arg("-o")
+        .arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .arg("-r") // reverse polygon orientation
         .arg("-x")
@@ -106,10 +111,37 @@ fn box_rotate() -> Result<(), Error> {
 }
 
 #[test]
+fn box_rotate_no_animated_normals() -> Result<(), Error> {
+    let mut cmd = Command::cargo_bin("gltfgen").unwrap();
+    let artifact = "./tests/artifacts/box_rotate_no_animated_normals.glb";
+    cmd.arg("-o")
+        .arg(artifact)
+        .arg("./assets/{box_rotate}_#.vtk")
+        .arg("-r") // reverse polygon orientation
+        .arg("-x")
+        .arg("(image: Embed(\"./assets/checker16.png\"))")
+        // .arg("-u")
+        // .arg("{\"uv\": f32}")
+        .arg("-m")
+        .arg("(name:\"checkerboard\", base_texture:(index:0,texcoord:0))")
+        .arg("--no-animated-normals")
+        .assert()
+        .stderr(b"" as &[u8]) // No errors
+        .success();
+
+    let expected = Gltf::open("./assets/box_rotate_no_animated_normals_expected.glb")?;
+    let actual = Gltf::open(artifact)?;
+
+    assert_eq_gltf_with_bytes(&expected, &actual);
+    Ok(())
+}
+
+#[test]
 fn box_rotate_attribs() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let artifact = "./tests/artifacts/box_rotate_pressure.glb";
-    cmd.arg(artifact)
+    cmd.arg("-o")
+        .arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .arg("-r") // reverse polygon orientation
         .arg("-x")
@@ -137,7 +169,8 @@ fn box_rotate_attribs() -> Result<(), Error> {
 fn box_rotate_attribs_gltf() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let artifact = "./tests/artifacts/box_rotate_pressure.gltf";
-    cmd.arg(artifact)
+    cmd.arg("-o")
+        .arg(artifact)
         .arg("./assets/{box_rotate}_#.vtk")
         .arg("-r") // reverse polygon orientation
         .arg("-x")
@@ -166,7 +199,8 @@ fn tet() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let warning = "Material ID was found but no materials were specified.";
     let artifact = "./tests/artifacts/tet.glb";
-    cmd.arg(artifact)
+    cmd.arg("-o")
+        .arg(artifact)
         .arg("./assets/{tet}_#.vtk")
         .arg("-a")
         .arg("{\"pressure\": f32}")
@@ -186,7 +220,8 @@ fn tet_and_tri() -> Result<(), Error> {
     let mut cmd = Command::cargo_bin("gltfgen").unwrap();
     let warning = "Material ID was found but no materials were specified.";
     let artifact = "./tests/artifacts/tet_and_tri.glb";
-    cmd.arg(artifact)
+    cmd.arg("-o")
+        .arg(artifact)
         .arg("./assets/{tet_and_tri}_#.vtk")
         .arg("-a")
         .arg("{\"pressure\": f32}")
@@ -208,7 +243,8 @@ fn multi() -> Result<(), Error> {
     let warning1 = "Material ID was found but no materials were specified.";
     let warning2 = "Path 'assets/box_triangulated.vtk' skipped since regex '^assets/([^/]*)_(?P<frame>[0-9]+)\\.vtk$' did not match.";
     let artifact = "./tests/artifacts/multi.glb";
-    cmd.arg(artifact)
+    cmd.arg("-o")
+        .arg(artifact)
         .arg("./assets/{*}_#.vtk")
         .arg("-r") // reverse polygon orientation
         .arg("-u")

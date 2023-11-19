@@ -1,17 +1,59 @@
+use crate::config::TIME_ATTRIB_NAME;
+use crate::config::WEIGHTS_ATTRIB_NAME;
+use crate::config::{
+    NORMAL_DISPLACEMENT_ATTRIB_NAME, POSITION_DISPLACEMENT_ATTRIB_NAME,
+    TANGENT_DISPLACEMENT_ATTRIB_NAME,
+};
+
+use super::build_buffer_vec3;
 use super::builders::*;
+use super::Morph;
 use byteorder::{WriteBytesExt, LE};
 use gltf::json;
 use indicatif::ProgressBar;
 use json::accessor::ComponentType as GltfComponentType;
-use json::accessor::Type as GltfType;
 use json::validation::Checked::Valid;
-use meshx::{bbox::BBox, ops::*};
 use std::mem;
+
+pub(crate) fn build_morph_target(
+    morph: &Morph,
+    accessors: &mut Vec<json::Accessor>,
+    buffer_views: &mut Vec<json::buffer::View>,
+    data: &mut Vec<u8>,
+) -> json::mesh::MorphTarget {
+    let disp_acc_index = build_buffer_vec3(
+        &morph.position_disp,
+        accessors,
+        buffer_views,
+        data,
+        POSITION_DISPLACEMENT_ATTRIB_NAME,
+    );
+    let normal_disp_acc_index = build_buffer_vec3(
+        &morph.normal_disp,
+        accessors,
+        buffer_views,
+        data,
+        NORMAL_DISPLACEMENT_ATTRIB_NAME,
+    );
+    let tangent_disp_acc_index = build_buffer_vec3(
+        &morph.tangent_disp,
+        accessors,
+        buffer_views,
+        data,
+        TANGENT_DISPLACEMENT_ATTRIB_NAME,
+    );
+
+    json::mesh::MorphTarget {
+        positions: disp_acc_index,
+        normals: normal_disp_acc_index,
+        tangents: tangent_disp_acc_index,
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn build_animation(
     first_frame: u32,
-    morphs: &[(u32, Vec<[f32; 3]>)],
+    morphs: &[Morph],
     node_index: usize,
     accessors: &mut Vec<json::Accessor>,
     buffer_views: &mut Vec<json::buffer::View>,
@@ -66,6 +108,7 @@ pub(crate) fn build_animation(
     // Weights accessor for all frames
     let weights_acc =
         json::Accessor::new(num_animation_frames * morphs.len(), GltfComponentType::F32)
+            .with_name(WEIGHTS_ATTRIB_NAME.to_string())
             .with_min_max(&[0.0][..], &[1.0][..])
             .with_sparse(morphs.len(), weight_indices_view_index, weight_view_index);
 
@@ -79,16 +122,16 @@ pub(crate) fn build_animation(
     let mut min_time = first_frame as f32 * time_step;
     let mut max_time = first_frame as f32 * time_step;
     if insert_vanishing_frames {
-        data.write_f32::<LE>(morphs[0].0 as f32 * time_step)
+        data.write_f32::<LE>(morphs[0].frame as f32 * time_step)
             .unwrap();
     }
     data.write_f32::<LE>(first_frame as f32 * time_step)
         .unwrap();
-    for (frame, _) in morphs.iter() {
+    for Morph { frame, .. } in morphs.iter() {
         let time = *frame as f32 * time_step;
         min_time = min_time.min(time);
         max_time = max_time.max(time);
-        if insert_vanishing_frames && frame == &morphs[0].0 {
+        if insert_vanishing_frames && frame == &morphs[0].frame {
             // Skip the first vanishing frame frame, since it was already inserted above.
             continue;
         }
@@ -98,42 +141,16 @@ pub(crate) fn build_animation(
     buffer_views.push(time_view);
 
     let time_acc = json::Accessor::new(num_animation_frames, GltfComponentType::F32)
+        .with_name(TIME_ATTRIB_NAME.to_string())
         .with_buffer_view(time_view_index)
         .with_min_max(&[min_time][..], &[max_time][..]);
 
     let time_acc_index = accessors.len() as u32;
     accessors.push(time_acc);
 
-    for (_, displacements) in morphs.iter() {
+    for morph in morphs.iter() {
         pb.tick();
-        let byte_length = displacements.len() * mem::size_of::<[f32; 3]>();
-
-        let disp_view = json::buffer::View::new(byte_length, data.len())
-            .with_stride(mem::size_of::<[f32; 3]>())
-            .with_target(json::buffer::Target::ArrayBuffer);
-        let disp_view_index = buffer_views.len();
-        buffer_views.push(disp_view);
-
-        let mut bbox = BBox::empty();
-        for disp in displacements.iter() {
-            bbox.absorb(*disp);
-            for &coord in disp.iter() {
-                data.write_f32::<LE>(coord).unwrap();
-            }
-        }
-
-        let disp_acc = json::Accessor::new(displacements.len(), GltfComponentType::F32)
-            .with_buffer_view(disp_view_index)
-            .with_type(GltfType::Vec3)
-            .with_min_max(&bbox.min_corner()[..], &bbox.max_corner()[..]);
-        let disp_acc_index = accessors.len() as u32;
-        accessors.push(disp_acc);
-
-        targets.push(json::mesh::MorphTarget {
-            positions: Some(json::Index::new(disp_acc_index)),
-            normals: None,
-            tangents: None,
-        });
+        targets.push(build_morph_target(morph, accessors, buffer_views, data));
     }
 
     // Add an animation using this morph target
