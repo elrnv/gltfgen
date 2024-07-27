@@ -54,10 +54,6 @@ pub struct Config {
     #[clap(short, long, default_value = "./out.glb")]
     pub output: std::path::PathBuf,
 
-    /// Silence all output.
-    #[clap(short, long)]
-    pub quiet: bool,
-
     /// Frames per second.
     ///
     /// 1/fps gives the time step between discrete frames. If 'time_step' is also provided, this
@@ -421,7 +417,6 @@ impl Config {
             match id.as_str() {
                 "PATTERN" => self.pattern = other.pattern.clone(),
                 "output" => self.output = other.output.clone(),
-                "quiet" => self.quiet = other.quiet,
                 "fps" => self.fps = other.fps,
                 "time_step" => self.time_step = other.time_step,
                 "reverse" => self.reverse = other.reverse,

@@ -1,12 +1,14 @@
 use std::path::PathBuf;
 
 use clap::Parser;
+use clap_verbosity_flag::{InfoLevel, Verbosity};
 use console::style;
+use env_logger;
 use gltfgen::config::Config;
 use indicatif::ParallelProgressIterator;
+use log;
 use rayon::prelude::*;
 
-use gltfgen::log;
 use gltfgen::*;
 
 const ABOUT: &str = "
@@ -70,6 +72,10 @@ struct Opt {
     #[clap(name = "CONFIG", long = "config")]
     config_path: Option<PathBuf>,
 
+    /// Controls verobosity of printed output.
+    #[clap(flatten)]
+    verbose: Verbosity<InfoLevel>,
+
     /// Print the configuration in JSON format, but don't run the generator.
     ///
     /// This is useful for debugging or for generating a configuration file that
@@ -85,7 +91,7 @@ struct Opt {
     /// without specifying the '-f' flag explicitly every time. (Replace
     /// <PATTERN> with an actual sequence pattern).
     ///
-    /// The --quiet flag is ignored.
+    /// The --verbose and --quiet flags are ignored.
     #[clap(long)]
     print_json_config: bool,
 
@@ -104,7 +110,7 @@ struct Opt {
     /// without specifying the '-f' flag explicitly every time. (Replace
     /// <PATTERN> with an actual sequence pattern).
     ///
-    /// The --quiet flag is ignored.
+    /// The --verbose and --quiet flags are ignored.
     #[clap(long)]
     print_ron_config: bool,
 
@@ -114,7 +120,7 @@ struct Opt {
     /// specific format like JSON or RON, use either of --print-json-config or
     /// --print-ron-config options.
     ///
-    /// The --quiet flag is ignored.
+    /// The --verbose and --quiet flags are ignored.
     #[clap(long)]
     print_full_config: bool,
 }
@@ -130,6 +136,9 @@ fn try_main() -> Result<(), Error> {
     let cli = <Opt as clap::Args>::augment_args(cli);
     let matches = cli.get_matches();
     let opt = <Opt as clap::FromArgMatches>::from_arg_matches(&matches).unwrap();
+    env_logger::Builder::new()
+        .filter_level(opt.verbose.log_level_filter())
+        .init();
 
     // Try to load the config file if specified.
     let config = if let Some(path) = opt.config_path {
@@ -185,7 +194,7 @@ fn try_main() -> Result<(), Error> {
         require_literal_leading_dot: false,
     };
 
-    let pb = utils::new_spinner(config.quiet);
+    let pb = utils::new_spinner(opt.verbose.is_silent());
 
     pb.set_prefix("Looking for files");
 
@@ -209,7 +218,7 @@ fn try_main() -> Result<(), Error> {
                 let caps = match regex.captures(&path_str) {
                     Some(caps) => caps,
                     None => {
-                        log!(warnings;
+                        crate::log!(warnings;
                             "Path '{}' skipped since regex '{}' did not match.",
                             &path_str,
                             regex.as_str(),
@@ -245,6 +254,8 @@ fn try_main() -> Result<(), Error> {
         })
         .collect();
 
+    log::warn!("Glob returned {} entries", mesh_meta.len());
+
     pb.finish_with_message(format!("Found {} files", mesh_meta.len()));
 
     print_warnings(warnings);
@@ -252,7 +263,7 @@ fn try_main() -> Result<(), Error> {
     // Prune mesh meta before building meshes
     if config.step > 1 {
         if let Some(lowest_frame_num) = lowest_frame_num {
-            let pb = utils::new_progress_bar(config.quiet, mesh_meta.len());
+            let pb = utils::new_progress_bar(opt.verbose.is_silent(), mesh_meta.len());
             pb.set_message("Pruning frames");
 
             mesh_meta = mesh_meta
@@ -273,7 +284,7 @@ fn try_main() -> Result<(), Error> {
         }
     }
 
-    let pb = utils::new_progress_bar(config.quiet, mesh_meta.len());
+    let pb = utils::new_progress_bar(opt.verbose.is_silent(), mesh_meta.len());
     pb.set_message("Building Meshes");
 
     let load_config = LoadConfig {
@@ -324,7 +335,7 @@ fn try_main() -> Result<(), Error> {
             insert_vanishing_frames: config.insert_vanishing_frames,
             animate_normals: !config.no_animated_normals,
             animate_tangents: !config.no_animated_tangents,
-            quiet: config.quiet,
+            quiet: opt.verbose.is_silent(),
         },
     );
 

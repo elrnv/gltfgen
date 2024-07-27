@@ -878,7 +878,7 @@ fn build_gltf_parts(
     print_warnings(warnings);
 
     let buffer = json::Buffer {
-        byte_length: data.len() as u32,
+        byte_length: data.len().into(),
         extensions: Default::default(),
         extras: Default::default(),
         name: None,

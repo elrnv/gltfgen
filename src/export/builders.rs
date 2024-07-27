@@ -21,8 +21,8 @@ impl BufferViewBuilder for json::buffer::View {
     fn new(byte_length: usize, byte_offset: usize) -> json::buffer::View {
         json::buffer::View {
             buffer: json::Index::new(0),
-            byte_length: byte_length as u32,
-            byte_offset: Some(byte_offset as u32),
+            byte_length: byte_length.into(),
+            byte_offset: Some(byte_offset.into()),
             byte_stride: None,
             extensions: Default::default(),
             extras: Default::default(),
@@ -35,12 +35,12 @@ impl BufferViewBuilder for json::buffer::View {
         self
     }
     fn with_stride(mut self, byte_stride: usize) -> json::buffer::View {
-        self.byte_stride = Some(byte_stride as u32);
+        self.byte_stride = Some(json::buffer::Stride(byte_stride));
         self
     }
 }
 
-pub(crate) trait AccessorBuilder {
+pub trait AccessorBuilder {
     fn new(count: usize, generic_comp: GltfComponentType) -> Self;
     fn with_name(self, name: String) -> Self;
     fn with_buffer_view(self, buffer_view: usize) -> Self;
@@ -59,7 +59,7 @@ impl AccessorBuilder for json::Accessor {
         json::Accessor {
             buffer_view: None,
             byte_offset: None,
-            count: count as u32,
+            count: count.into(),
             component_type: Valid(json::accessor::GenericComponentType(generic_component_type)),
             extensions: Default::default(),
             extras: Default::default(),
@@ -77,13 +77,13 @@ impl AccessorBuilder for json::Accessor {
     }
     fn with_buffer_view(mut self, buf_view: usize) -> json::Accessor {
         if self.byte_offset.is_none() {
-            self.byte_offset = Some(0);
+            self.byte_offset = Some(0_u64.into());
         }
         self.buffer_view = Some(json::Index::new(buf_view as u32));
         self
     }
     fn with_byte_offset(mut self, byte_offset: usize) -> json::Accessor {
-        self.byte_offset = Some(byte_offset as u32);
+        self.byte_offset = Some(byte_offset.into());
         self
     }
 
@@ -113,17 +113,17 @@ impl AccessorBuilder for json::Accessor {
         values_buf_view: usize,
     ) -> json::Accessor {
         self.sparse = Some(json::accessor::sparse::Sparse {
-            count: count as u32,
+            count: count.into(),
             indices: json::accessor::sparse::Indices {
                 buffer_view: json::Index::new(indices_buf_view as u32),
-                byte_offset: 0,
+                byte_offset: 0_u64.into(),
                 component_type: Valid(json::accessor::IndexComponentType(GltfComponentType::U32)),
                 extensions: Default::default(),
                 extras: Default::default(),
             },
             values: json::accessor::sparse::Values {
                 buffer_view: json::Index::new(values_buf_view as u32),
-                byte_offset: 0,
+                byte_offset: 0_u64.into(),
                 extensions: Default::default(),
                 extras: Default::default(),
             },
