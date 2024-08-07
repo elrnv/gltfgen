@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use clap::Parser;
-use clap_verbosity_flag::{InfoLevel, Verbosity};
+use clap_verbosity_flag::Verbosity;
 use console::style;
 use env_logger;
 use gltfgen::config::Config;
@@ -74,7 +74,7 @@ struct Opt {
 
     /// Controls verobosity of printed output.
     #[clap(flatten)]
-    verbose: Verbosity<InfoLevel>,
+    verbose: Verbosity,
 
     /// Print the configuration in JSON format, but don't run the generator.
     ///
