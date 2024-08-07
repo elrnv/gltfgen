@@ -1,4 +1,5 @@
 use indicatif::{ProgressBar, ProgressStyle};
+use log;
 use regex::Regex;
 
 #[macro_export]
@@ -17,19 +18,28 @@ macro_rules! log {
     });
 }
 
-pub fn print_warnings(messages: Vec<(usize, String)>) {
-    print_messages(messages, console::style("WARNING").yellow().for_stderr());
-}
-pub fn print_info(messages: Vec<(usize, String)>) {
-    print_messages(messages, console::style("INFO").blue().for_stderr());
+enum MessageType {
+    Warn,
+    Info,
 }
 
-fn print_messages(messages: Vec<(usize, String)>, prefix: impl std::fmt::Display) {
+pub fn print_warnings(messages: Vec<(usize, String)>) {
+    print_messages(messages, MessageType::Warn);
+}
+pub fn print_info(messages: Vec<(usize, String)>) {
+    print_messages(messages, MessageType::Info);
+}
+
+fn print_messages(messages: Vec<(usize, String)>, msg_type: MessageType) {
     for (count, warning) in messages {
-        if count > 1 {
-            eprintln!("{} ({}): {}", prefix, count, warning);
+        let msg = if count > 1 {
+            format!("({}) {}", count, warning)
         } else {
-            eprintln!("{}: {}", prefix, warning);
+            format!("{}", warning)
+        };
+        match msg_type {
+            MessageType::Warn => log::warn!("{}", msg),
+            MessageType::Info => log::info!("{}", msg),
         }
     }
 }
