@@ -21,6 +21,7 @@ pub use texture::*;
 pub use utils::*;
 
 use mesh::{trimesh_f64_to_f32, Mesh};
+use meshx::io::MeshExtractor;
 
 /// Configuration for loading meshes.
 #[derive(Clone, Copy, Debug)]
@@ -90,10 +91,32 @@ pub fn load_mesh(path: impl AsRef<Path>, config: LoadConfig) -> Option<Mesh> {
     load_mesh_impl(path.as_ref(), config)
 }
 
+fn load_polymesh<T: meshx::io::Real>(
+    path: &Path,
+) -> Result<meshx::mesh::PolyMesh<T>, meshx::io::Error> {
+    match path.extension().and_then(|ext| ext.to_str()) {
+        Some("vtk") | Some("vtu") | Some("vtp") | Some("pvtu") | Some("pvtp") => {
+            let vtk = vtkio::Vtk::import(path)?;
+            vtk.extract_polymesh()
+        }
+        Some("obj") => {
+            let mut obj = meshx::io::obj::Obj::load_with_config(
+                path,
+                meshx::io::obj::LoadConfig { strict: false },
+            )?;
+            if let Err(e) = obj.load_mtls() {
+                log::warn!("Failed to load Wavefront's mtl file: {}", e);
+            }
+            obj.data.extract_polymesh()
+        }
+        _ => Err(meshx::io::Error::UnsupportedFileFormat),
+    }
+}
+
 fn load_mesh_impl(path: &Path, config: LoadConfig) -> Option<Mesh> {
-    let polymesh_tris = if let Ok(polymesh) = meshx::io::load_polymesh::<f64, _>(path) {
+    let polymesh_tris = if let Ok(polymesh) = load_polymesh::<f64>(path) {
         trimesh_f64_to_f32(meshx::TriMesh::from(polymesh))
-    } else if let Ok(polymesh) = meshx::io::load_polymesh::<f32, _>(path) {
+    } else if let Ok(polymesh) = load_polymesh::<f32>(path) {
         meshx::TriMesh::<f32>::from(polymesh)
     } else {
         meshx::TriMesh::default()
