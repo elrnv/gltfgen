@@ -1,6 +1,6 @@
 [package]
 name = "gltfgen"
-version = "0.8.0"
+version = "0.9.0"
 authors = ["Egor Larionov <egor.larionov@gmail.com>"]
 edition = "2021"
 
@@ -15,7 +15,7 @@ keywords = ["vtk", "obj", "3D", "animation", "generator"]
 [dependencies]
 gltf = { version = "1", features = ["names", "extras"] }
 clap = { version = "4", features = ["derive", "wrap_help", "cargo"] }
-clap-verbosity-flag = "2"
+clap-verbosity-flag = "3"
 regex = "1"
 glob = "0.3"
 meshx = "0.6"
@@ -25,12 +25,12 @@ console = "0.15"
 rayon = "1"
 syn = "2"                                                             # For parsing attributes
 heck = "0.5"                                                          # For converting case
-ron = "0.8"
+ron = "0.10"
 serde = "1"
 serde_json = "1"
 indexmap = { version = "2", features = ["serde"] }
 num-traits = "0.2"
-thiserror = "1.0.23"
+thiserror = "2.0"
 log = "0.4"
 env_logger = "0.11"
 

@@ -44,8 +44,10 @@ pub trait AccessorBuilder {
     fn new(count: usize, generic_comp: GltfComponentType) -> Self;
     fn with_name(self, name: String) -> Self;
     fn with_buffer_view(self, buffer_view: usize) -> Self;
+    #[allow(dead_code)]
     fn with_byte_offset(self, byte_offset: usize) -> Self;
     fn with_type(self, type_: GltfType) -> Self;
+    #[allow(dead_code)]
     fn with_component_type(self, component_type: json::accessor::GenericComponentType) -> Self;
     fn with_min_max<'a, T>(self, min: &'a [T], max: &'a [T]) -> Self
     where
